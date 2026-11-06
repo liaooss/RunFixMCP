@@ -1,6 +1,6 @@
-# RunFix Architecture (0.7.0)
+# RunFix Architecture (0.8.0)
 
-RunFix is an agentic orchestration layer for Python-first research-code diagnosis, safe repair and experiment reproduction.
+RunFix is an agentic orchestration layer for Python-first research-code diagnosis, safe repair, experiment reproduction and isolated execution.
 
 ## Agent loop
 
@@ -133,21 +133,60 @@ repro/understanding.py  → repro/plan.py → repro/runner.py → repro/metrics.
 The reproduction layer shares no state with the repair transaction machinery: it writes only
 under `.runfix/repro/` and never patches project files.
 
-## Observation-driven offline policy (0.7.0)
+## Evidence-based diagnosis layer (0.8.0)
+
+```
+diagnosis/evidence.py   → diagnosis/dependencies.py → diagnosis/rootcause.py
+        (graph)                 (constraints)              (ranked candidates)
+```
+
+`evidence.py` builds a typed graph: the exception and its project-local frames, every source
+file that imports a module, every declared requirement and its installed counterpart, and the
+test files selected from the traceback. `dependencies.py` implements the PEP 440 subset the
+manifests use and compares it with the selected interpreter. `rootcause.py` turns both into
+ranked candidates, each with a deterministic confidence, the facts that raised it, the facts
+that would contradict it, and one action.
+
+The agent consumes this through `analyze_failure`, which now returns `root_causes`; the policy
+decides from the top candidate's action (`install_package`, `patch_source`, `select_interpreter`,
+`configure_data`, `select_cuda_wheel`, …) rather than from the coarse failure category. Every
+step records `strategy = root_cause:<kind>`.
+
+Confidence is a score over cited evidence (base per kind, +0.03 per extra citation capped at
++0.09, +0.06 for independent classifier agreement, −0.12 per contradiction, clamped to
+[0.05, 0.98]). It is not a learned probability and the report says so.
+
+## Isolation layer (0.8.0)
+
+`runfix/sandbox.py` provides two optional backends:
+
+| Backend | Command shape |
+| --- | --- |
+| `docker` | `docker run --rm -i -v <project>:/workspace -w /workspace --network none <image> <argv>` |
+| `wsl` | `wsl [-d <distro>] --cd <project-as-/mnt/...> -- <argv>` |
+
+`ensure_backend` probes the executable (and, for WSL, that a distribution exists) and raises
+with an actionable message. RunFix refuses to silently run unsandboxed: a missing backend is a
+hard error, not a fallback. Inside Docker the interpreter substitution is skipped (the image
+provides it) and project paths are rewritten to `/workspace`; the run record keeps both the
+logical `command` and the `launch_command` plus `interpreter_resolution`.
+
+## Observation-driven offline policy (0.7.0 / 0.8.0)
 
 `runfix/agent/policy.py` replaces the fixed tool sequence that 0.6.x used. It reads the
-observations — failure category, patch state, previous analysis, last verification — and
-returns a decision with a rationale, an optional `strategy`, and a `stop_reason` when it stops.
-Representative stops:
+observations — ranked root causes, failure category, patch state, previous analysis, last
+verification — and returns a decision with a rationale, an optional `strategy`, and a
+`stop_reason` when it stops. Representative stops:
 
 | Evidence | Decision |
 | --- | --- |
 | runtime passed | `finish` with `verified_baseline` |
-| missing dependency, install authorized | `create_isolated_environment` |
-| missing dependency, install unauthorized | `finish` with `needs_install_permission` |
+| top root cause wants a package install, install authorized | `create_isolated_environment` |
+| top root cause wants a package install, install unauthorized | `finish` with `needs_install_permission` |
+| top root cause needs a specific interpreter / data path / CUDA wheel / manifest decision | `finish` with `needs_interpreter_selection` / `needs_data_configuration` / `needs_cuda_wheel_selection` / `needs_manifest_decision` |
+| top root cause is `patch_source`, write authorized | `validate_patch` → `apply_patch` → `verify_after_patch` |
+| top root cause is `patch_source`, write unauthorized | `finish` with `needs_write_permission_or_patch` |
 | GPU OOM | `finish` with `needs_configuration_change` |
-| patchable category, write authorized | `validate_patch` → `apply_patch` → `verify_after_patch` |
-| patchable category, write unauthorized | `finish` with `needs_write_permission_or_patch` |
 | repeated failure | re-analyze instead of repeating the same patch |
 | unclassified failure | `finish` with `no_evidence_backed_repair` |
 

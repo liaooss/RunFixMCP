@@ -1,5 +1,60 @@
 # Changelog
 
+## 0.8.0 — evidence-based diagnosis, dependency resolution and isolation
+
+RunFix now diagnoses with an evidence graph and ranked, citable root causes, and can execute a
+reproduction attempt inside Docker or WSL.
+
+### Added
+
+- **Evidence graph** (`runfix/diagnosis/evidence.py`): typed nodes (project, git revision,
+  environment, framework, dependency, installed package, module, source file, test file,
+  exception) and relations (`failed_with`, `raised_in`, `imports`, `references`, `declares`,
+  `resolved_to`, `tested_by`, …), built from static analysis plus one interpreter probe.
+- **Dependency analysis** (`runfix/diagnosis/dependencies.py`): a self-contained PEP 440
+  subset (`==`, `!=`, `>=`, `<=`, `>`, `<`, `~=`, `===`, `==X.Y.*`), parsing of
+  `requirements.txt` / `environment.yml` (conda pins + `pip:` section) / `pyproject.toml`,
+  and findings for `not_installed`, `version_unsatisfied`, `manifest_disagreement`,
+  `python_incompatible` and `version_unparsable` with proposed resolutions.
+- **Ranked root causes** (`runfix/diagnosis/rootcause.py`): 11 candidate kinds, each with a
+  deterministic confidence, the evidence that raised it, contradicting facts, and one
+  concrete action. No LLM involved.
+- **`runfix diagnose-root-cause`** and the MCP tool `explain_root_causes` (23 tools total).
+- **The offline agent uses the ranking**: `analyze_failure` attaches the candidates and the
+  policy decides from the top candidate's action, with new stop reasons
+  `needs_interpreter_selection`, `needs_data_configuration`, `needs_cuda_wheel_selection`,
+  `needs_gpu_host`, `needs_manifest_decision`, `needs_human_decision`.
+- **Docker/WSL isolation** (`runfix/sandbox.py`): `runfix sandbox-info`, and
+  `--sandbox none|docker|wsl` on `runfix reproduce` and `run_reproduction`. Docker runs with
+  `--network none`, the project mounted at `/workspace`, and project paths rewritten. A
+  missing backend raises instead of silently running unsandboxed.
+- `docs/DIAGNOSIS.md`.
+
+### Changed
+
+- `runfix reproduce` records `sandbox`, `launch_command` and `interpreter_resolution` in the
+  run metadata, and the Markdown report prints the sandbox in the execution section.
+- The agent's `analyze_failure` result now carries `root_causes`, `dependency_analysis` and
+  an `evidence_graph_summary`.
+- `get_server_capabilities` reports `isolation_backends` (cheap existence check only).
+
+### Verified
+
+- `python -m pytest -q` → **201 passed, 2 skipped**.
+- `python -m runfix.mcp.smoke --full` → **23/23 tools exercised over the real MCP protocol**,
+  exit 0.
+- Root-cause CLI on a real project: `module_declared_missing`, confidence 0.95, citing
+  `requirements.txt` + the traceback + the classifier, with graph
+  `failed_with/raised_in/imports/declares/resolved_to` edges present.
+
+### Not verified (stated, not claimed)
+
+- A real Docker container or WSL distribution was never executed: neither is available on
+  this machine. The command construction, refusal semantics and pipeline wiring are tested;
+  `runfix sandbox-info` reports both backends unavailable here.
+- The LLM planner and LLM-authored patches remain unverified (no API key).
+
+
 ## 0.7.0 — research experiment reproduction agent
 
 RunFix can now read a research repository, plan its environment, run it under explicit

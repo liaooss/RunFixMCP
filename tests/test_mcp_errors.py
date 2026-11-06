@@ -98,7 +98,7 @@ def test_install_denial_is_recognised_separately():
 def test_smoke_expected_tools_match_the_documented_contract():
     from runfix.mcp.smoke import EXPECTED_TOOLS
 
-    assert len(EXPECTED_TOOLS) == 22
+    assert len(EXPECTED_TOOLS) == 23
     assert {"apply_patch", "rollback_patch", "get_patch_transaction"} <= EXPECTED_TOOLS
     assert {"start_task", "get_task_status", "stop_task", "read_task_log", "list_tasks"} <= EXPECTED_TOOLS
 

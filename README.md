@@ -1,10 +1,10 @@
-# RunFix 0.7.0 — Autonomous Research-Code Agent + MCP Server
+# RunFix 0.8.0 — Autonomous Research-Code Agent + MCP Server
 
-**AI-powered Research Runtime Diagnosis, Safe Repair and Experiment Reproduction Agent**
+**AI-powered Research Runtime Diagnosis, Evidence-based Root-Cause Analysis, Safe Repair and Experiment Reproduction Agent**
 
-RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, proposes minimal patches, verifies outcomes through staged runtime checks, and now plans and runs a reproduction attempt with an evidence ladder that never mistakes an exit code for a result.
+RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, ranks root causes with cited evidence, applies and rolls back minimal patches, plans and runs a reproduction attempt with an evidence ladder, and can execute under Docker/WSL isolation.
 
-> **Status:** 0.7.0 adds research-experiment reproduction on top of the 0.6.1 stability work. See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md) for the evidence-based audit and [docs/REPRODUCTION.md](docs/REPRODUCTION.md) for the reproduction model.
+> **Status:** 0.8.0 adds evidence-based depth diagnosis (dependency resolution, evidence graph, ranked root causes) and Docker/WSL isolation on top of the 0.7.0 reproduction agent. See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md), [docs/DIAGNOSIS.md](docs/DIAGNOSIS.md) and [docs/REPRODUCTION.md](docs/REPRODUCTION.md).
 
 ## MVP scope
 
@@ -12,7 +12,7 @@ RunFix diagnoses Python / PyTorch research projects, connects environment eviden
 - CPU and single-GPU validation. Multi-GPU/DDP is deferred.
 - An agent loop with a planner, allow-listed tool registry, observations, action history, stop conditions and evidence-backed reports.
 - Project scanning, Python/PyTorch/CUDA diagnosis, traceback analysis, optional LLM planning/patch proposals, guarded patch application, C0-C5 evidence validation, and a local web UI.
-- A local MCP Server (stdio) with 22 tools for diagnostics, gated environment creation, persistent background experiment tasks, log retrieval, patch validation, Agent orchestration and experiment reproduction.
+- A local MCP Server (stdio) with 23 tools for diagnostics, gated environment creation, persistent background experiment tasks, log retrieval, patch validation, Agent orchestration and experiment reproduction.
 - Optional adapters for separately installed Env-Doctor, Repo2Run, and ResearchEnvBench.
 - Upstream source repositories are not bundled in this package.
 
@@ -114,6 +114,15 @@ additionally requires a clean git tree. Full details in
 
 See [0.6.1](docs/UPGRADE_0.6.1.md), [0.6.0](docs/UPGRADE_0.6.0.md) or [0.5.0](docs/UPGRADE_0.5.0.md) upgrade instructions. All of them preserve your existing `.conda_env` and `.runfix` folders.
 
+## RunFix 0.8.0 highlights (depth diagnosis and isolation)
+
+- **Evidence graph.** `runfix diagnose-root-cause` links the exception, traceback frames, source files, imports, declared requirements, installed versions and candidate test files into one graph with typed edges (`failed_with`, `raised_in`, `imports`, `declares`, `resolved_to`, `tested_by`, …).
+- **Ranked root causes with citations.** Each candidate carries a deterministic confidence, the facts that raised it, the facts that would contradict it, and one concrete action. `module_declared_missing` scores 0.95 when the manifest, the environment probe and the classifier all agree.
+- **Dependency-constraint analysis.** A self-contained PEP 440 subset (`==`, `!=`, `>=`, `<=`, `>`, `<`, `~=`, `==X.Y.*`) compares declared constraints with the installed interpreter, detects manifest disagreements and Python-version mismatches, and proposes install / choose-manifest / select-interpreter resolutions.
+- **The agent uses the ranking.** `analyze_failure` now attaches the ranked candidates, and the offline policy decides from the top candidate's action instead of the coarse category, stopping with `needs_interpreter_selection`, `needs_data_configuration`, `needs_cuda_wheel_selection`, `needs_gpu_host`, `needs_manifest_decision`, …
+- **Docker/WSL isolation.** `--sandbox docker|wsl` runs the reproduction command inside a container or a WSL distribution, with the network disabled and the project mounted at `/workspace`. If the backend is missing, RunFix refuses to run unsandboxed instead of silently degrading.
+- **New CLI**: `runfix diagnose-root-cause`, `runfix sandbox-info`; **new MCP tool**: `explain_root_causes` (23 tools total).
+
 ## RunFix 0.7.0 highlights (experiment reproduction)
 
 - **`runfix reproduce`** reads a research repository, plans its environment, runs it when authorized, and writes a `reproduction_report.json` / `.md` that states how far it got and why it stopped there.
@@ -127,7 +136,7 @@ See [0.6.1](docs/UPGRADE_0.6.1.md), [0.6.0](docs/UPGRADE_0.6.0.md) or [0.5.0](do
 ## RunFix 0.6.1 highlights (stability)
 
 - **MCP SDK v2 support is real, not nominal.** Permission denials now reach the client as tool errors carrying the original reason instead of a bare `Error executing tool ...` crash. Verified against `mcp==2.3.0`.
-- **The MCP self-check exercises the whole contract.** `runfix-mcp-check --full` starts a fully-permitted server on a throwaway project and calls all 22 tools over the protocol, including a full patch → rollback cycle.
+- **The MCP self-check exercises the whole contract.** `runfix-mcp-check --full` starts a fully-permitted server on a throwaway project and calls all 23 tools over the protocol, including a full patch → rollback cycle.
 - **Patch transactions are concurrency-safe.** A per-project cross-process lock serialises validation, backup and apply; a transaction left in `applying` by a crash is restored (or flagged for review) on the next RunFix operation, and `runfix patch-recover` does it explicitly.
 - **Background tasks recover their exit code after a server restart.** Each task runs under a small supervisor that writes the real exit code to disk, so a restarted server reports `completed`/`failed` with the true `returncode` instead of `ended_unobserved`.
 - **Conda environments are reported correctly on Windows.** `build_isolated_environment` re-resolves the interpreter location after creation, so a successful `environment.yml` build no longer returns `created: false`.
@@ -157,20 +166,20 @@ python -m runfix.mcp.server --allowed-root "D:\research"
 # or: runfix mcp --allowed-root "D:\research"
 ```
 
-Verify the actual stdio connection. The default run starts a temporary project, asserts the discovered tool set **equals** the documented 22 tools, checks the reported version, scans the project, lists tasks, and proves that execution / background-task / agent-escalation / installation gates cannot be bypassed by a per-call confirmation:
+Verify the actual stdio connection. The default run starts a temporary project, asserts the discovered tool set **equals** the documented 23 tools, checks the reported version, scans the project, lists tasks, and proves that execution / background-task / agent-escalation / installation gates cannot be bypassed by a per-call confirmation:
 
 ```powershell
 python .\scripts\check_mcp_connection.py
 # or, after installation: runfix-mcp-check
 ```
 
-Add `--full` to also start a fully-permitted server on the same throwaway project and call **all 22 tools** over the protocol (scan, diagnose, validate, analyse, source context, patch validate/apply/rollback/transaction, tests, command, environment, task lifecycle, agent run, reproduction plan/run, report):
+Add `--full` to also start a fully-permitted server on the same throwaway project and call **all 23 tools** over the protocol (scan, diagnose, validate, analyse, source context, patch validate/apply/rollback/transaction, tests, command, environment, task lifecycle, agent run, reproduction plan/run, report):
 
 ```powershell
 python -m runfix.mcp.smoke --full
 ```
 
-The server exposes 22 tools, including `create_isolated_environment`, background task management, `rollback_patch`, `get_patch_transaction`, and the reproduction pair `plan_reproduction` / `run_reproduction`.
+The server exposes 23 tools, including `create_isolated_environment`, background task management, `rollback_patch`, `get_patch_transaction`, and the reproduction pair `plan_reproduction` / `run_reproduction`.
 
 **Security:** project paths are restricted to configured allowed roots. Execution, writes and package installation are disabled by default. Enable them at server startup (`--enable-execution`, `--enable-write`, `--enable-install`) and also require explicit per-call confirmation. See [docs/MCP_SERVER.md](docs/MCP_SERVER.md) for Codex configuration and examples.
 
@@ -306,7 +315,9 @@ It does not silently run the full 44-repository benchmark. Full paper reproducti
 | `runfix validate <project> [--python P] [--include-gpu] [--command ...]` | C0–C5 staged validation with saved evidence |
 | `runfix patch-check / patch-apply / patch-recover <project> ...` | Validate, apply and recover transactional patches |
 | `runfix agent <project> [flags]` | Plan–act–observe agent (`--goal`, `--max-steps`, `--timeout`) |
-| `runfix reproduce <project> [--plan-only] [--allow-execution] [--expect N=V]` | Understand, plan, run when authorized, and report reproducibility |
+| `runfix diagnose-root-cause <project> [--traceback-file F] [--python P]` | Evidence graph and ranked root-cause candidates |
+| `runfix reproduce <project> [--plan-only] [--allow-execution] [--expect N=V] [--sandbox docker\|wsl]` | Understand, plan, run when authorized, and report reproducibility |
+| `runfix sandbox-info` | Which isolation backends (Docker / WSL) this machine provides |
 | `runfix web [--host H] [--port N]` | Loopback-only Web UI (`/api/health`, `/api/scan`, `/api/diagnose`, `/api/validate`, `/api/analyze`, `/api/agent`) |
 | `runfix mcp [--allowed-root R ...] [--enable-execution] [--enable-write] [--enable-install]` | stdio MCP server |
 | `runfix integrations [--python P] [--repo2run-path R] [--researchenvbench-path R]` | Report which optional upstream tools are present |
@@ -317,7 +328,7 @@ It does not silently run the full 44-repository benchmark. Full paper reproducti
 python -m pip install -e ".[dev,mcp]"
 python -m pytest -q                                  # unit + integration suite
 python -m runfix.mcp.smoke                           # real stdio handshake and permission gates
-python -m runfix.mcp.smoke --full                    # all 22 tools over the MCP protocol
+python -m runfix.mcp.smoke --full                    # all 23 tools over the MCP protocol
 ```
 
 The MCP end-to-end test is skipped automatically when the optional `mcp` extra is not installed. `python -m pytest -q` must report zero failures for a release to be considered verified; see [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md) for the audit that established that requirement.

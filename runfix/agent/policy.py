@@ -53,6 +53,18 @@ def _finish(rationale: str, stop_reason: str) -> dict[str, Any]:
     return {"tool": "finish", "rationale": rationale, "stop_reason": stop_reason, "planner": "policy"}
 
 
+# How a ranked root-cause action maps onto the tools the agent can actually use.
+ROOT_CAUSE_STOP_REASONS = {
+    "select_interpreter": "needs_interpreter_selection",
+    "configure_data": "needs_data_configuration",
+    "select_cuda_wheel": "needs_cuda_wheel_selection",
+    "run_on_cpu_or_gpu_host": "needs_gpu_host",
+    "choose_manifest": "needs_manifest_decision",
+    "collect_more_evidence": "needs_more_evidence",
+}
+INSTALL_ACTIONS = {"install_package", "install_constraint", "declare_and_install"}
+
+
 def decide(state: dict[str, Any], available: list[str]) -> dict[str, Any]:
     """Choose the next tool from the currently available set, using the evidence."""
     observations = state.get("observations", {})
@@ -111,6 +123,41 @@ def decide(state: dict[str, Any], available: list[str]) -> dict[str, Any]:
             )
         return choose("analyze_failure",
                       "A runtime failure exists; classify it from the traceback and source context before acting.")
+
+    # Prefer the ranked, evidence-backed diagnosis over the coarse category.
+    ranked = (analysis.get("root_causes") if isinstance(analysis, dict) else None) or []
+    top = ranked[0] if ranked else None
+    if top:
+        action = top.get("action") or {}
+        kind = action.get("kind") or "manual"
+        statement = str(top.get("statement", ""))
+        confidence = top.get("confidence")
+        strategy = f"root_cause:{top.get('kind')}"
+        headline = f"Ranked root cause #{top.get('rank')} ({top.get('kind')}, confidence {confidence}): {statement}"
+
+        if kind in INSTALL_ACTIONS:
+            if "create_isolated_environment" in available:
+                return choose("create_isolated_environment", headline, strategy=strategy)
+            return _finish(
+                f"{headline} Fixing it needs a package installation, which was not authorized.",
+                "needs_install_permission",
+            )
+        if kind == "patch_source":
+            if "validate_patch" in available:
+                return choose("validate_patch", headline, strategy=strategy)
+            if "apply_patch" in available:
+                return choose("apply_patch", headline, strategy=strategy)
+            if "verify_after_patch" in available:
+                return choose("verify_after_patch", headline, strategy=strategy)
+            return _finish(
+                f"{headline} Fixing it needs a source change, but no validated patch or write permission is available.",
+                "needs_write_permission_or_patch",
+            )
+        stop_reason = ROOT_CAUSE_STOP_REASONS.get(kind, "needs_human_decision")
+        return _finish(
+            f"{headline} Recommended action: {action.get('description', 'none')}",
+            stop_reason,
+        )
 
     if category in ENVIRONMENT_CATEGORIES:
         if "create_isolated_environment" in available:

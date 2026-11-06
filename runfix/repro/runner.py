@@ -196,7 +196,10 @@ def run_reproduction(project_path: str | Path,
                      timeout: int = 1800,
                      expected_metrics: dict[str, float] | None = None,
                      completion_regex: str | None = None,
-                     log_tail_bytes: int = 200_000) -> dict[str, Any]:
+                     log_tail_bytes: int = 200_000,
+                     sandbox: str = "none",
+                     sandbox_image: str | None = None,
+                     sandbox_distro: str | None = None) -> dict[str, Any]:
     """Run one explicit command and record everything needed to judge it."""
     root = Path(project_path).expanduser().resolve()
     if not root.is_dir():
@@ -211,8 +214,31 @@ def run_reproduction(project_path: str | Path,
     timeout = max(30, min(int(timeout), 24 * 3600))
     python = resolve_python(python_executable)
     argv = list(command)
-    if Path(argv[0]).name.lower() in {"python", "python.exe", "py"}:
+    sandbox = (sandbox or "none").lower()
+
+    if sandbox not in {"none", "docker", "wsl"}:
+        raise ValueError(f"Unknown sandbox backend {sandbox!r}; expected none, docker or wsl.")
+
+    # Inside a sandbox the interpreter is the one in the image/distribution, not the host
+    # path, so host interpreter substitution is skipped and recorded as such.
+    if sandbox == "none" and Path(argv[0]).name.lower() in {"python", "python.exe", "py"}:
         argv[0] = python
+
+    sandbox_record: dict[str, Any] = {"backend": "none"}
+    launch = list(argv)
+    if sandbox != "none":
+        from ..sandbox import DEFAULT_DOCKER_IMAGE, build_sandbox_command, ensure_backend
+        info = ensure_backend(sandbox)
+        plan = build_sandbox_command(
+            root, argv, backend=sandbox,
+            image=sandbox_image or DEFAULT_DOCKER_IMAGE,
+            distro=sandbox_distro,
+            docker_executable=info.get("executable", "docker"),
+            wsl_executable=info.get("executable", "wsl"),
+        )
+        launch = plan["command"]
+        sandbox_record = {**plan, "version": info.get("version"),
+                          "available_distros": info.get("distros")}
 
     run_dir = _prepare_run_dir(root)
     log_path = run_dir / "run.log"
@@ -223,9 +249,12 @@ def run_reproduction(project_path: str | Path,
         "run_id": run_dir.name,
         "project_path": str(root),
         "command": [redact(item)[:1000] for item in argv],
+        "launch_command": [redact(item)[:1000] for item in launch],
+        "sandbox": sandbox_record,
+        "interpreter_resolution": "host" if sandbox == "none" else "sandbox",
         "started_at": _now(),
         "started_epoch": started_at,
-        "python_executable": python,
+        "python_executable": python if sandbox == "none" else None,
         "timeout_seconds": timeout,
         "fingerprint": {
             "git": {
@@ -247,7 +276,7 @@ def run_reproduction(project_path: str | Path,
     with log_path.open("wb") as log_handle:
         try:
             process = subprocess.Popen(
-                argv, cwd=str(root), stdin=subprocess.DEVNULL,
+                launch, cwd=str(root), stdin=subprocess.DEVNULL,
                 stdout=log_handle, stderr=subprocess.STDOUT, shell=False, close_fds=True,
             )
             try:

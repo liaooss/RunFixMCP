@@ -30,11 +30,22 @@ def reproduce(project_path: str | Path,
               expected_metrics: dict[str, float] | None = None,
               completion_regex: str | None = None,
               build_environment: bool = False,
-              install_timeout: int = 1800) -> dict[str, Any]:
+              install_timeout: int = 1800,
+              sandbox: str = "none",
+              sandbox_image: str | None = None,
+              sandbox_distro: str | None = None) -> dict[str, Any]:
     """Produce a reproduction report, executing only what the caller authorized."""
     root = Path(project_path).expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
+
+    sandbox = (sandbox or "none").lower()
+    if sandbox not in {"none", "docker", "wsl"}:
+        raise ValueError(f"Unknown sandbox backend {sandbox!r}; expected none, docker or wsl.")
+    if sandbox != "none":
+        from ..sandbox import ensure_backend
+        # Fail before planning if the requested isolation cannot actually be provided.
+        ensure_backend(sandbox)
 
     plan = build_environment_plan(root, python_executable)
     argv, command_source = _select_command(plan, command)
@@ -45,6 +56,7 @@ def reproduce(project_path: str | Path,
         "authorized": bool(allow_execute),
         "planned_command": argv,
         "command_source": command_source,
+        "sandbox": sandbox,
     }
 
     environment_result = None
@@ -72,6 +84,9 @@ def reproduce(project_path: str | Path,
             timeout=timeout,
             expected_metrics=expected_metrics,
             completion_regex=completion_regex,
+            sandbox=sandbox,
+            sandbox_image=sandbox_image,
+            sandbox_distro=sandbox_distro,
         )
     elif allow_execute and not argv:
         execution["blocked_reason"] = (

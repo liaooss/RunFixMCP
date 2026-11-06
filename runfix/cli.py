@@ -52,6 +52,15 @@ def parser():
     x.add_argument("--install-timeout",type=int,default=1800)
     x.add_argument("--expect",action="append",default=[],metavar="NAME=VALUE",help="Declared target metric; repeatable")
     x.add_argument("--completion-regex",help="Regex that marks a successful completion in the run log")
+    x.add_argument("--sandbox",choices=["none","docker","wsl"],default="none",help="Isolation backend for the run")
+    x.add_argument("--sandbox-image",default=None,help="Docker image used with --sandbox docker")
+    x.add_argument("--sandbox-distro",default=None,help="WSL distribution used with --sandbox wsl")
+    x=sub.add_parser("diagnose-root-cause",help="Rank evidence-backed root-cause candidates for a project or a traceback")
+    x.add_argument("project"); x.add_argument("--python",dest="py")
+    g=x.add_mutually_exclusive_group(); g.add_argument("--traceback-file"); g.add_argument("--traceback")
+    x.add_argument("--include-understanding",action="store_true",help="Also analyse configuration, datasets and seeds")
+    x.add_argument("--max-candidates",type=int,default=8)
+    x=sub.add_parser("sandbox-info",help="Show which isolation backends (docker/WSL) this machine provides")
     x=sub.add_parser("mcp",help="Start the RunFix MCP server over stdio")
     x.add_argument("--allowed-root",action="append",default=[],help="Allowed project root; repeat to add more.")
     x.add_argument("--enable-execution",action="store_true",help="Allow project test/command execution after per-call confirmation.")
@@ -121,11 +130,25 @@ def main(argv=None):
                 name,value=item.split("=",1)
                 expected[name.strip()]=float(value)
             result=reproduce(root,cmd,a.py,a.timeout,a.allow_execution,a.plan_only,
-                             expected or None,a.completion_regex,a.build_environment,a.install_timeout)
+                             expected or None,a.completion_regex,a.build_environment,a.install_timeout,
+                             a.sandbox,a.sandbox_image,a.sandbox_distro)
             print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
             if a.plan_only:
                 return 0
             return 0 if result["verdict"] in {"metrics_matched","reproduced"} else 1
+        if a.action=="diagnose-root-cause":
+            from .diagnosis.rootcause import rank_root_causes
+            root=project_dir(a.project)
+            text=Path(a.traceback_file).read_text(encoding="utf-8",errors="replace") if a.traceback_file else a.traceback
+            result=rank_root_causes(root,text,a.py,include_probe=True,
+                                    include_understanding=a.include_understanding,
+                                    max_candidates=a.max_candidates)
+            print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
+            return 0 if result.get("top") else 1
+        if a.action=="sandbox-info":
+            from .sandbox import detect_backends
+            print(json.dumps(detect_backends(),ensure_ascii=False,indent=2))
+            return 0
         if a.action=="web":
             from .web.server import serve
             serve(a.host,a.port); return 0

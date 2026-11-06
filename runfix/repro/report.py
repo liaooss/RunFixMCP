@@ -277,9 +277,11 @@ def render_reproduction_markdown(report: dict[str, Any]) -> str:
 
     run = report.get("run")
     if run:
+        from ..sandbox import summarize_sandbox
         lines += ["## Execution", ""]
         lines += [
             f"- Command: `{' '.join(run.get('command') or [])}`",
+            f"- Sandbox: **{summarize_sandbox(run.get('sandbox'))}**",
             f"- Status: **{run.get('status')}** (exit code `{run.get('returncode')}`)",
             f"- Duration: {run.get('duration_seconds')} s",
             f"- Log: `{(run.get('log') or {}).get('path')}` ({((run.get('log') or {}).get('size_bytes'))} bytes)",

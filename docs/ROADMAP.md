@@ -90,8 +90,19 @@
 - [ ] Multi-run averaging with variance reporting
 
 ## 0.8.0 — deep diagnosis and adaptive repair
-- [ ] Multi-source evidence graph (traceback × environment × config × tests × logs)
-- [ ] Root-cause candidate ranking with confidence and citations
-- [ ] Dependency conflict solving and version compatibility search
-- [ ] Repair strategy selection driven by the failure evidence
-- [ ] Docker/WSL isolated execution
+- [x] Multi-source evidence graph (traceback × environment × dependencies × source × tests)
+- [x] Root-cause candidate ranking with deterministic confidence and cited evidence
+- [x] Dependency-constraint analysis (PEP 440 subset) with proposed resolutions
+- [x] Repair strategy selection driven by the top ranked candidate
+- [x] Docker/WSL isolation for reproduction runs, with refusal instead of silent degradation
+- [x] MCP tool `explain_root_causes` (23 tools)
+- [ ] Multi-round repair loop that *re-selects* a different candidate after a failed attempt
+- [ ] Log-signal extraction from run output into the evidence graph
+- [ ] Real container execution verified on a host with Docker
+- [ ] Causal dependency-to-runtime fault localization across packages
+
+## 0.9.0 — benchmark and evaluation
+- [ ] Standard research-code dataset for environment build and reproduction
+- [ ] Metrics: environment build rate, diagnosis accuracy, repair rate, reproduction rate, time, cost
+- [ ] Comparison and ablation against Repo2Run, Env-Doctor and ResearchEnvBench-style baselines
+- [ ] Reproducible harness with pinned hardware/software conditions

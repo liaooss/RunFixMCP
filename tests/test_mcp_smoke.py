@@ -9,9 +9,10 @@ from runfix.mcp.smoke import (
 
 
 def test_smoke_test_covers_all_registered_mcp_tools():
-    assert len(EXPECTED_TOOLS) == 22
+    assert len(EXPECTED_TOOLS) == 23
     assert "plan_reproduction" in EXPECTED_TOOLS
     assert "run_reproduction" in EXPECTED_TOOLS
+    assert "explain_root_causes" in EXPECTED_TOOLS
     assert "get_server_capabilities" in EXPECTED_TOOLS
     assert "run_agent" in EXPECTED_TOOLS
     assert "get_latest_report" in EXPECTED_TOOLS

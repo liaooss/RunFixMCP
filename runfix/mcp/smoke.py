@@ -27,7 +27,7 @@ EXPECTED_TOOLS = {
     "get_latest_report",
     "create_isolated_environment",
     "start_task", "get_task_status", "stop_task", "read_task_log", "list_tasks",
-    "plan_reproduction", "run_reproduction",
+    "plan_reproduction", "run_reproduction", "explain_root_causes",
 }
 
 
@@ -335,6 +335,10 @@ async def _exercise_full_client(client: Any, project: Path) -> dict[str, Any]:
     if agent_report["outcome"] not in {"inspection_only", "diagnosed"}:
         raise RuntimeError(f"Unexpected agent outcome in full mode: {agent_report['outcome']!r}")
     await invoke("plan_reproduction", {"project_path": str(project)}, "steps", "cuda")
+    await invoke("explain_root_causes", {
+        "project_path": str(project),
+        "traceback_text": "ModuleNotFoundError: No module named 'definitely_not_installed_pkg'",
+    }, "candidates", "top")
     reproduction = await invoke("run_reproduction", {
         "project_path": str(project),
         "command": [sys.executable, "-c", "print('epoch 1/1 loss=0.42 acc=0.91'); print('final test accuracy: 0.91')"],

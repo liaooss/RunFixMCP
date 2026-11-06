@@ -235,6 +235,7 @@ def create_server(policy: MCPPolicy):
     def get_server_capabilities() -> dict[str, Any]:
         """Return RunFix MCP version, allowed project roots, and server-side permission gates."""
         from .. import __version__
+        from ..sandbox import probe_backends_fast
         return {
             "name": "RunFix MCP Server",
             "version": __version__,
@@ -246,6 +247,8 @@ def create_server(policy: MCPPolicy):
                 "file_modification": policy.enable_write,
                 "dependency_installation": policy.enable_install,
             },
+            # Cheap existence check only; `runfix sandbox-info` reports versions and distros.
+            "isolation_backends": probe_backends_fast(),
             # Derived from the decorators that actually ran, so the advertised list can
             # never drift away from the registered one.
             "tool_count": len(registered),
@@ -428,6 +431,31 @@ def create_server(policy: MCPPolicy):
         )
 
     @tool()
+    def explain_root_causes(project_path: str, traceback_text: str = "",
+                            python_executable: str = "",
+                            include_understanding: bool = False,
+                            max_candidates: int = 8) -> dict[str, Any]:
+        """Rank evidence-backed root-cause candidates (dependency graph, environment, source) for a project or a supplied traceback. Read-only; never modifies files or installs packages."""
+        root = policy.project(project_path)
+        if len(traceback_text) > 100_000:
+            raise ValueError("traceback_text exceeds the 100 KB limit.")
+        from ..diagnosis.rootcause import rank_root_causes
+        result = rank_root_causes(
+            root, traceback_text or None, python_executable or None,
+            include_probe=True, include_understanding=include_understanding,
+            max_candidates=max_candidates,
+        )
+        # The full graph can be large; keep the response bounded for a model client.
+        graph = result.get("evidence_graph") or {}
+        result["evidence_graph"] = {
+            "node_count": graph.get("node_count"),
+            "edge_count": graph.get("edge_count"),
+            "node_kinds": graph.get("node_kinds"),
+            "relations": graph.get("relations"),
+        }
+        return result
+
+    @tool()
     def plan_reproduction(project_path: str, python_executable: str = "") -> dict[str, Any]:
         """Read a research repository and return an explicit environment/run plan with CUDA, GPU, dataset and entrypoint evidence. Never installs or executes project code."""
         root = policy.project(project_path)
@@ -442,9 +470,12 @@ def create_server(policy: MCPPolicy):
                          expected_metrics: dict[str, float] | None = None,
                          completion_regex: str = "",
                          build_environment: bool = False,
+                         sandbox: str = "none",
+                         sandbox_image: str = "",
+                         sandbox_distro: str = "",
                          confirm_execution: bool = False,
                          confirm_install: bool = False) -> dict[str, Any]:
-        """Run one authorized reproduction attempt and return its evidence-backed report. Requires the execution gate; building the environment also requires the install gate."""
+        """Run one authorized reproduction attempt and return its evidence-backed report. Requires the execution gate; building the environment also requires the install gate. `sandbox` may be none, docker or wsl."""
         root = policy.project(project_path)
         policy.require_execution(confirm_execution)
         if build_environment:
@@ -454,6 +485,8 @@ def create_server(policy: MCPPolicy):
             root, command=command, python_executable=python_executable or None,
             timeout=timeout, allow_execute=True, expected_metrics=expected_metrics or None,
             completion_regex=completion_regex or None, build_environment=bool(build_environment),
+            sandbox=sandbox or "none", sandbox_image=sandbox_image or None,
+            sandbox_distro=sandbox_distro or None,
         )
 
     @tool()

@@ -443,3 +443,47 @@ python -m runfix.mcp.smoke --full  → 22/22 tools exercised, exit 0
 - 根因分析仍是“规则 + 静态证据”，没有多源证据图与置信度排序（0.8.0）。
 - 依赖冲突求解、Docker/WSL 隔离、基准评测（0.9.0）均未开始。
 - LLM 规划器与补丁生成仍未在真实 API 下验证。
+
+---
+
+## 12. 0.8.0 增量（回填）
+
+### 12.1 新增能力
+
+| 能力 | 实现 | 验证 |
+| --- | --- | --- |
+| 多源证据图（异常/帧/源码/导入/依赖/已安装版本/测试） | `runfix/diagnosis/evidence.py` | `tests/test_root_cause.py`（断言 `failed_with` / `raised_in` / `imports` / `declares` 边） |
+| 依赖约束分析（PEP 440 子集，无运行时依赖） | `runfix/diagnosis/dependencies.py` | `tests/test_dependencies.py`（含 `~=1.4`、`==X.Y.*`、conda pin、pip 段、清单冲突、Python 版本不兼容） |
+| 根因候选排序 + 置信度 + 证据引用 | `runfix/diagnosis/rootcause.py` | `tests/test_root_cause.py`（11 类候选、排序、上限、无信号兜底） |
+| Agent 采用排序结果决策 | `agent/policy.py`、`agent/tools.py` | `tests/test_agent_policy.py` |
+| Docker / WSL 隔离执行 | `runfix/sandbox.py` | `tests/test_sandbox.py`（命令构造、路径改写、缺失即拒绝） |
+| CLI `diagnose-root-cause` / `sandbox-info` | `runfix/cli.py` | 手动真实运行 |
+| MCP `explain_root_causes`（共 23 工具） | `runfix/mcp/server.py` | `runfix.mcp.smoke --full` → 23/23 |
+
+### 12.2 真实运行证据
+
+对一个含 git 提交、README、manifest 的演示项目，给定真实 `ModuleNotFoundError` 日志：
+
+```
+top kind   : module_declared_missing  conf=0.95  rank=1
+statement  : 'numpy' is declared by the project but is not installed in the selected interpreter.
+action     : install_package -> pip install numpy>=1.20
+evidence   : requirements.txt, traceback, analysis(独立分类器一致)
+graph      : 11 nodes / 12 edges
+relations  : failed_with=1 raised_in=1 imports=3 declares=1 resolved_to=1 has_revision=1 runs_on=1 references=3
+```
+
+### 12.3 0.8.0 测试基线
+
+```
+python -m pytest -q                → 201 passed, 2 skipped
+python -m runfix.mcp.smoke --full  → 23/23 tools exercised, exit 0
+```
+
+### 12.4 明确未验证
+
+- **真实 Docker 容器与真实 WSL 发行版从未执行**：本机 `docker` 不存在、`wsl` 无发行版，
+  `runfix sandbox-info` 如实报告两者不可用。已验证的是命令构造、路径改写、缺失即拒绝、
+  以及复现流程的接线；**不能**声称容器内执行已验证。
+- 多轮修复中“换一个候选重试”尚未实现（当前一轮分析只采纳 top 候选）。
+- 日志信号（运行输出中的线索）尚未进入证据图。

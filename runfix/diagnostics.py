@@ -32,6 +32,59 @@ def _json_output(text: str):
             except Exception: pass
     return None
 
+VERSION_PROBE = """
+import importlib.metadata as md, json, re, sys
+names = json.loads(sys.argv[1])
+out = {}
+for name in names:
+    try:
+        out[name] = md.version(name)
+    except Exception:
+        out[name] = None
+print(json.dumps(out))
+"""
+
+# Import name -> distribution name, for the cases where they differ.
+DISTRIBUTION_ALIASES = {
+    "sklearn": "scikit-learn",
+    "cv2": "opencv-python",
+    "pil": "pillow",
+    "yaml": "pyyaml",
+    "skimage": "scikit-image",
+    "tf": "tensorflow",
+    "pytorch": "torch",
+}
+
+
+def canonical_distribution(name: str) -> str:
+    import re
+
+    lowered = name.strip().lower()
+    lowered = DISTRIBUTION_ALIASES.get(lowered, lowered)
+    return re.sub(r"[-_.]+", "-", lowered)
+
+
+def probe_package_versions(python_executable: str | None,
+                           names: list[str],
+                           timeout: int = 40) -> dict[str, str | None]:
+    """Return installed distribution versions for ``names`` in the selected interpreter.
+
+    Names are canonicalised, and an import name that differs from its distribution name
+    (``sklearn`` -> ``scikit-learn``) is mapped, so a manifest name can be looked up reliably.
+    """
+    python = resolve_python(python_executable)
+    requested = sorted({canonical_distribution(name) for name in names if name})
+    if not requested:
+        return {}
+    result = run([python, "-c", VERSION_PROBE, json.dumps(requested)], timeout=timeout)
+    if result["returncode"] != 0:
+        return {name: None for name in requested}
+    payload = _json_output(result["stdout"])
+    if not isinstance(payload, dict):
+        return {name: None for name in requested}
+    return {name: payload.get(name) for name in requested}
+
+
 def find_env_doctor(python: str):
     p = Path(python)
     candidates = [

@@ -170,6 +170,20 @@ class ToolBox:
             analysis=analyze_error(self.root,self.latest_log,use_llm=bool(self.options.get("use_llm")))
             llm=analysis.get("llm_analysis") or {}
             self.patch_text=llm.get("patch","") if isinstance(llm,dict) else ""
+            if self.options.get("deep_diagnosis",True):
+                try:
+                    from ..diagnosis.rootcause import rank_root_causes
+                    diagnosis=rank_root_causes(self.root,self.latest_log,self.python,
+                                               include_probe=True,max_candidates=5)
+                    analysis["root_causes"]=diagnosis["candidates"]
+                    analysis["dependency_analysis"]=diagnosis["dependency_analysis"]
+                    analysis["evidence_graph_summary"]={
+                        "node_count":diagnosis["evidence_graph"]["node_count"],
+                        "edge_count":diagnosis["evidence_graph"]["edge_count"],
+                        "relations":diagnosis["evidence_graph"]["relations"],
+                    }
+                except Exception as exc:
+                    analysis["root_cause_error"]=f"{type(exc).__name__}: {exc}"
             return analysis
         if name=="validate_patch":
             if not self.patch_text: raise ValueError("No patch was proposed.")
