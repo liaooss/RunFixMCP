@@ -1,5 +1,69 @@
 # Changelog
 
+## 0.9.0 — reproducible benchmark and ablation study
+
+RunFix can now measure its own diagnosis instead of asserting it works.
+
+### Added
+
+- **`runfix/bench`**: a reproducible diagnosis benchmark (`synthetic-v1`) of eleven real
+  small repositories with injected defects, fixed environment descriptions and recorded
+  ground truth, plus an ablation harness. Exposed as `runfix bench`
+  (`--list`, `--task`, `--ablations`, `--out`, `--json`).
+- **Metrics that separate correctness from caution**: `top1_accuracy`, `top3_accuracy`,
+  `action_accuracy`, `detection_rate` (defect tasks) and `control_abstention_rate` (the
+  control task must stay `unclassified_error`), `mean_top_confidence`,
+  `mean_latency_seconds`, `per_category_accuracy`, and
+  `files_modified_by_diagnosis` — verified by hashing every file before and after diagnosis.
+- **Ablation variants**: `no_dependency_analysis`, `no_classifier_agreement`,
+  `no_score_ranking`, each run over the same tasks and reported as a delta against `full`.
+- **Injection points for deterministic evaluation**: `rank_root_causes(...,
+  environment_override=, installed_override=, ablate=...)` so a task can describe an
+  environment without touching the host.
+- **A new root-cause kind found by building the benchmark**: `python_syntax` →
+  `syntax_error` (`patch_source`). Before 0.9.0 a `SyntaxError` fell through to
+  `unclassified_error`, which the suite caught immediately.
+- `docs/BENCHMARK.md`.
+
+### Results on this machine (real run, not projected)
+
+`runfix bench`, 11 tasks, wall time ≈ 2.0 s:
+
+| Metric | Value |
+| --- | --- |
+| top-1 / top-3 root-cause accuracy | 1.0 / 1.0 |
+| proposed-action accuracy | 1.0 |
+| detection rate (10 defect tasks) | 1.0 |
+| control abstention rate (1 control task) | 1.0 |
+| mean top confidence | 0.7845 |
+| mean latency | 0.179 s per task |
+| files modified by diagnosis | 0 |
+
+`runfix bench --ablations`:
+
+| Variant | Top-1 | Δ vs full |
+| --- | --- | --- |
+| `full` | 1.0 | — |
+| `no_dependency_analysis` | 0.6364 | −0.3636 |
+| `no_classifier_agreement` | 1.0 | 0.0 |
+| `no_score_ranking` | 0.9091 | −0.0909 |
+
+A perfect score on a suite we authored is a regression guard, not evidence of real-world
+accuracy; the report says so on every run, and the unmeasured metrics (environment build
+rate, repair rate, reproduction rate, real-world accuracy) are printed with their reasons.
+
+### Not measured (stated, not claimed)
+
+- Environment build success, repair success, post-repair test pass rate and experiment
+  reproduction rate: they need network installs, LLM-authored patches or a curated corpus.
+- Docker/WSL execution remains unverified on this host (no Docker daemon, no WSL distro).
+
+### Not changed
+
+- No new MCP tools in this release: benchmarking is a developer/evaluation workflow, not an
+  agent capability, so the MCP surface stays at 23 tools.
+
+
 ## 0.8.0 — evidence-based diagnosis, dependency resolution and isolation
 
 RunFix now diagnoses with an evidence graph and ranked, citable root causes, and can execute a

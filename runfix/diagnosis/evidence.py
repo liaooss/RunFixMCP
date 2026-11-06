@@ -68,8 +68,15 @@ def build_evidence_graph(project_path: str | Path,
                          traceback_text: str | None = None,
                          python_executable: str | None = None,
                          include_probe: bool = True,
-                         include_tests: bool = True) -> dict[str, Any]:
-    """Assemble nodes and edges for one project, optionally around a concrete failure."""
+                         include_tests: bool = True,
+                         environment_override: dict[str, Any] | None = None,
+                         installed_override: dict[str, str | None] | None = None) -> dict[str, Any]:
+    """Assemble nodes and edges for one project, optionally around a concrete failure.
+
+    ``environment_override`` and ``installed_override`` replace the interpreter probe. They
+    exist so a benchmark or a test can describe a specific environment deterministically
+    without spawning subprocesses or depending on the host.
+    """
     root = Path(project_path).expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
@@ -89,8 +96,12 @@ def build_evidence_graph(project_path: str | Path,
         graph.edge(project_node, f"git_revision:{str(git.get('commit'))[:12]}", "has_revision")
 
     environment: dict[str, Any] = {}
-    if include_probe:
+    if environment_override is not None:
+        environment = dict(environment_override)
+    elif include_probe:
         environment = diagnose_environment(python_executable, use_env_doctor=False)
+
+    if environment:
         env_id = graph.node(
             "environment", "interpreter",
             executable=environment.get("python_executable"),
@@ -110,7 +121,14 @@ def build_evidence_graph(project_path: str | Path,
 
     # Declared dependencies and their installed counterparts.
     package_names = [item["name"] for item in declared]
-    installed = probe_package_versions(python_executable, package_names) if (include_probe and package_names) else {}
+    if installed_override is not None:
+        normalized = {canonical_distribution(name): value for name, value in installed_override.items()}
+        installed = {canonical_distribution(name): normalized.get(canonical_distribution(name))
+                     for name in package_names}
+    elif include_probe and package_names:
+        installed = probe_package_versions(python_executable, package_names)
+    else:
+        installed = {}
     dependency_ids: dict[str, str] = {}
     for item in declared:
         canonical = item["canonical"]

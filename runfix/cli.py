@@ -61,6 +61,13 @@ def parser():
     x.add_argument("--include-understanding",action="store_true",help="Also analyse configuration, datasets and seeds")
     x.add_argument("--max-candidates",type=int,default=8)
     x=sub.add_parser("sandbox-info",help="Show which isolation backends (docker/WSL) this machine provides")
+    x=sub.add_parser("bench",help="Run the reproducible diagnosis benchmark and optional ablation study")
+    x.add_argument("--suite",default="synthetic-v1")
+    x.add_argument("--task",action="append",default=[],metavar="ID",help="Run only these task ids; repeatable")
+    x.add_argument("--out",default=None,help="Directory for the JSON/Markdown report")
+    x.add_argument("--ablations",action="store_true",help="Run every ablation variant and compare")
+    x.add_argument("--json",action="store_true",help="Print JSON instead of the Markdown report")
+    x.add_argument("--list",action="store_true",help="List the suite's tasks and exit")
     x=sub.add_parser("mcp",help="Start the RunFix MCP server over stdio")
     x.add_argument("--allowed-root",action="append",default=[],help="Allowed project root; repeat to add more.")
     x.add_argument("--enable-execution",action="store_true",help="Allow project test/command execution after per-call confirmation.")
@@ -149,6 +156,33 @@ def main(argv=None):
             from .sandbox import detect_backends
             print(json.dumps(detect_backends(),ensure_ascii=False,indent=2))
             return 0
+        if a.action=="bench":
+            from .bench import (SUITE, TASKS, run_ablations, run_suite,
+                                render_ablation_markdown, render_suite_markdown, write_benchmark_report)
+            if a.suite!=SUITE:
+                raise ValueError(f"Unknown benchmark suite {a.suite!r}; the only suite is {SUITE!r}.")
+            if a.list:
+                print(json.dumps([task.to_dict() for task in TASKS],ensure_ascii=False,indent=2))
+                return 0
+            task_ids=a.task or None
+            if task_ids:
+                unknown=set(task_ids)-{task.id for task in TASKS}
+                if unknown:
+                    raise ValueError(f"Unknown benchmark task(s): {', '.join(sorted(unknown))}")
+            if a.ablations:
+                result=run_ablations(task_ids,a.suite)
+                markdown=render_ablation_markdown(result)
+            else:
+                result=run_suite(task_ids,suite=a.suite)
+                markdown=render_suite_markdown(result)
+            directory=write_benchmark_report(result,a.out)
+            print(json.dumps(result,ensure_ascii=False,indent=2) if a.json else markdown)
+            print(f"\nReport written to: {directory}",file=sys.stderr)
+            if "metrics" in result:
+                error_count=result["metrics"].get("tasks_with_errors",0)
+            else:
+                error_count=sum(v["metrics"].get("tasks_with_errors",0) for v in result.get("variants",[]))
+            return 1 if error_count else 0
         if a.action=="web":
             from .web.server import serve
             serve(a.host,a.port); return 0

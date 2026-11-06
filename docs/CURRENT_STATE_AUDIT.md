@@ -487,3 +487,62 @@ python -m runfix.mcp.smoke --full  → 23/23 tools exercised, exit 0
   以及复现流程的接线；**不能**声称容器内执行已验证。
 - 多轮修复中“换一个候选重试”尚未实现（当前一轮分析只采纳 top 候选）。
 - 日志信号（运行输出中的线索）尚未进入证据图。
+
+---
+
+## 13. 0.9.0 增量（回填）
+
+### 13.1 新增能力
+
+| 能力 | 实现 | 验证 |
+| --- | --- | --- |
+| 可复现诊断基准集（11 个任务，含 1 个对照组） | `runfix/bench/suite.py` | `tests/test_bench.py`（22 项） |
+| 指标计算（top-1/top-3/action/detection/control abstention/延迟/文件改动） | `runfix/bench/runner.py` | 同上 |
+| 消融实验（依赖分析 / 分类器一致 / 评分排序） | `runfix/bench/runner.py` `run_ablations` | 同上 |
+| 只读性验证（诊断前后全量文件哈希对比） | `runfix/bench/runner.py` `_snapshot` | 报告断言 0 个文件被修改 |
+| CLI `runfix bench` | `runfix/cli.py` | 手动真实运行 + CLI 级测试 |
+| 确定性评测注入点 | `rank_root_causes(environment_override=, installed_override=, ablate=)` | 基准任务不依赖宿主环境 |
+
+### 13.2 基准发现并修复的真实缺陷
+
+构建基准时发现：`python_syntax` 类别没有任何候选生成器，`SyntaxError` 会落到
+`unclassified_error`。0.9.0 新增 `syntax_error` 候选（置信度 0.90，动作 `patch_source`），
+并已由 `syntax_error` 任务覆盖。
+
+### 13.3 本机实测数字
+
+`runfix bench`（11 个任务，墙钟约 2.0 s）：
+
+| 指标 | 值 |
+| --- | --- |
+| top-1 / top-3 根因准确率 | 1.0 / 1.0 |
+| 建议动作准确率 | 1.0 |
+| 检出率（10 个缺陷任务） | 1.0 |
+| 对照组弃权率（1 个无缺陷任务） | 1.0 |
+| 平均 top 置信度 | 0.7845 |
+| 平均诊断耗时 | 0.179 s / 任务 |
+| 诊断修改的文件数 | 0 |
+
+`runfix bench --ablations`：
+
+| 变体 | Top-1 | Δ vs full |
+| --- | --- | --- |
+| `full` | 1.0 | — |
+| `no_dependency_analysis` | 0.6364 | **−0.3636** |
+| `no_classifier_agreement` | 1.0 | 0.0 |
+| `no_score_ranking` | 0.9091 | **−0.0909** |
+
+### 13.4 0.9.0 测试基线
+
+```
+python -m pytest -q                → 223 passed, 2 skipped
+python -m runfix.mcp.smoke --full  → 23/23 tools exercised, exit 0（本版本未新增 MCP 工具）
+```
+
+### 13.5 明确未测量（不宣称）
+
+- 环境构建成功率、修复成功率、修复后测试通过率、实验复现成功率：需要联网安装、LLM 生成补丁
+  或真实论文语料，本机均不具备。
+- 真实科研仓库上的根因准确率：`synthetic-v1` 的任务由本项目自行构造，**不能**外推为真实世界精度。
+- 与 Repo2Run / Env-Doctor / ResearchEnvBench 的对比实验：需要统一语料与硬件条件，尚未开展。
+- Docker/WSL 实际执行仍未验证（本机无 Docker 守护进程、无 WSL 发行版）。

@@ -1,10 +1,10 @@
-# RunFix 0.8.0 — Autonomous Research-Code Agent + MCP Server
+# RunFix 0.9.0 — Autonomous Research-Code Agent + MCP Server
 
 **AI-powered Research Runtime Diagnosis, Evidence-based Root-Cause Analysis, Safe Repair and Experiment Reproduction Agent**
 
-RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, ranks root causes with cited evidence, applies and rolls back minimal patches, plans and runs a reproduction attempt with an evidence ladder, and can execute under Docker/WSL isolation.
+RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, ranks root causes with cited evidence, applies and rolls back minimal patches, plans and runs a reproduction attempt with an evidence ladder, can execute under Docker/WSL isolation, and measures its own diagnosis with a reproducible benchmark.
 
-> **Status:** 0.8.0 adds evidence-based depth diagnosis (dependency resolution, evidence graph, ranked root causes) and Docker/WSL isolation on top of the 0.7.0 reproduction agent. See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md), [docs/DIAGNOSIS.md](docs/DIAGNOSIS.md) and [docs/REPRODUCTION.md](docs/REPRODUCTION.md).
+> **Status:** 0.9.0 adds a reproducible benchmark and ablation study on top of the 0.8.0 depth diagnosis. See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md), [docs/DIAGNOSIS.md](docs/DIAGNOSIS.md), [docs/REPRODUCTION.md](docs/REPRODUCTION.md) and [docs/BENCHMARK.md](docs/BENCHMARK.md).
 
 ## MVP scope
 
@@ -113,6 +113,15 @@ additionally requires a clean git tree. Full details in
 ## Upgrade from an earlier release
 
 See [0.6.1](docs/UPGRADE_0.6.1.md), [0.6.0](docs/UPGRADE_0.6.0.md) or [0.5.0](docs/UPGRADE_0.5.0.md) upgrade instructions. All of them preserve your existing `.conda_env` and `.runfix` folders.
+
+## RunFix 0.9.0 highlights (benchmark and ablation)
+
+- **`runfix bench`** runs a reproducible suite of eleven small repositories with injected defects, fixed environment descriptions and recorded ground truth, and writes `benchmark.json` / `benchmark.md`.
+- **Caution is measured, not assumed.** The suite contains a control task with no defect; the report separates *detection rate* on defect tasks from *control abstention rate* on the control task, so "always finds something" cannot look like success.
+- **Read-only is verified.** Every project file is hashed before and after diagnosis; the report counts files modified (must be 0).
+- **Ablation study** (`runfix bench --ablations`) runs the same tasks with dependency analysis, classifier corroboration or score ranking disabled, and reports the delta — on this suite dependency analysis is worth **36.4 percentage points** of top-1 accuracy and ranking **9.1**.
+- **The benchmark found a real gap**: `SyntaxError` previously fell through to `unclassified_error`; 0.9.0 adds a `syntax_error` root cause with a `patch_source` action.
+- Results on this machine: top-1 / top-3 / action accuracy **1.0**, control abstention **1.0**, mean latency **0.179 s**, files modified **0**. These are regression guards on a self-authored suite, not evidence of real-world accuracy — [docs/BENCHMARK.md](docs/BENCHMARK.md) says so too.
 
 ## RunFix 0.8.0 highlights (depth diagnosis and isolation)
 
@@ -318,6 +327,7 @@ It does not silently run the full 44-repository benchmark. Full paper reproducti
 | `runfix diagnose-root-cause <project> [--traceback-file F] [--python P]` | Evidence graph and ranked root-cause candidates |
 | `runfix reproduce <project> [--plan-only] [--allow-execution] [--expect N=V] [--sandbox docker\|wsl]` | Understand, plan, run when authorized, and report reproducibility |
 | `runfix sandbox-info` | Which isolation backends (Docker / WSL) this machine provides |
+| `runfix bench [--ablations] [--task ID] [--out DIR]` | Reproducible diagnosis benchmark and ablation study |
 | `runfix web [--host H] [--port N]` | Loopback-only Web UI (`/api/health`, `/api/scan`, `/api/diagnose`, `/api/validate`, `/api/analyze`, `/api/agent`) |
 | `runfix mcp [--allowed-root R ...] [--enable-execution] [--enable-write] [--enable-install]` | stdio MCP server |
 | `runfix integrations [--python P] [--repo2run-path R] [--researchenvbench-path R]` | Report which optional upstream tools are present |

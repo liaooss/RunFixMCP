@@ -31,6 +31,7 @@ BASE_CONFIDENCE = {
     "declared_package_not_installed": 0.58,
     "dataset_missing": 0.78,
     "api_signature_mismatch": 0.62,
+    "syntax_error": 0.90,
     "test_assertion_failure": 0.70,
     "unclassified_error": 0.30,
 }
@@ -41,6 +42,7 @@ CATEGORY_ALIGNMENT = {
     "cuda_torch_compatibility": {"cuda_driver_mismatch", "cuda_unavailable"},
     "missing_file_or_wrong_path": {"dataset_missing"},
     "api_signature_mismatch": {"api_signature_mismatch"},
+    "python_syntax": {"syntax_error"},
     "test_assertion_failure": {"test_assertion_failure"},
 }
 
@@ -55,6 +57,7 @@ ACTION_BY_KIND = {
     "cuda_unavailable": "run_on_cpu_or_gpu_host",
     "dataset_missing": "configure_data",
     "api_signature_mismatch": "patch_source",
+    "syntax_error": "patch_source",
     "test_assertion_failure": "patch_source",
     "unclassified_error": "collect_more_evidence",
 }
@@ -279,6 +282,20 @@ def _misc_candidates(analysis: dict[str, Any] | None,
                 category="missing_file_or_wrong_path",
             ))
 
+    if category == "python_syntax":
+        contexts = (analysis or {}).get("evidence", {}).get("source_context") or []
+        evidence = [{"source": f"{item['file']}:{item['line']}", "detail": (item.get("excerpt") or "")[:300]}
+                    for item in contexts[:3]]
+        candidates.append(_candidate(
+            "syntax_error",
+            "The module cannot be parsed, so nothing else in the project can run until the syntax is fixed.",
+            evidence or [{"source": "traceback", "detail": "SyntaxError / IndentationError"}],
+            {"kind": "patch_source",
+             "description": "Fix the reported line (indentation, brackets, quotes) and re-run the compile check.",
+             "command": None},
+            category=category,
+        ))
+
     if category == "test_assertion_failure":
         contexts = (analysis or {}).get("evidence", {}).get("source_context") or []
         evidence = [{"source": f"{item['file']}:{item['line']}", "detail": (item.get("excerpt") or "")[:300]}
@@ -300,13 +317,25 @@ def rank_root_causes(project_path: str | Path,
                      python_executable: str | None = None,
                      include_probe: bool = True,
                      include_understanding: bool = False,
-                     max_candidates: int = 8) -> dict[str, Any]:
-    """Return ranked, evidence-backed root-cause candidates for a project or a failure."""
+                     max_candidates: int = 8,
+                     environment_override: dict[str, Any] | None = None,
+                     installed_override: dict[str, str | None] | None = None,
+                     ablate: set[str] | frozenset[str] = frozenset()) -> dict[str, Any]:
+    """Return ranked, evidence-backed root-cause candidates for a project or a failure.
+
+    ``ablate`` disables individual contributions so a benchmark can measure what each one is
+    worth: ``dependencies`` (constraint analysis), ``classifier`` (independent classifier
+    agreement) and ``ranking`` (score-based ordering).
+    """
     root = Path(project_path).expanduser().resolve()
     if not root.is_dir():
         raise NotADirectoryError(str(root))
 
-    bundle = build_evidence_graph(root, traceback_text, python_executable, include_probe)
+    bundle = build_evidence_graph(
+        root, traceback_text, python_executable, include_probe,
+        environment_override=environment_override,
+        installed_override=installed_override,
+    )
     environment = bundle["environment"]
     declared = bundle["declared_requirements"]
     installed = bundle["installed_versions"]
@@ -315,6 +344,14 @@ def rank_root_causes(project_path: str | Path,
     dependency_analysis = analyse_dependencies(
         root, installed, environment.get("python_version") if environment else None
     )
+    if "dependencies" in ablate:
+        dependency_analysis = {
+            **dependency_analysis,
+            "findings": [],
+            "resolutions": [],
+            "counts": {"error": 0, "warning": 0, "info": 0},
+            "ablated": True,
+        }
 
     understanding = None
     if include_understanding:
@@ -336,7 +373,7 @@ def rank_root_causes(project_path: str | Path,
     candidates += _cuda_candidates(root, environment, declared_text)
 
     category = (analysis or {}).get("category")
-    aligned = CATEGORY_ALIGNMENT.get(category, set())
+    aligned = set() if "classifier" in ablate else CATEGORY_ALIGNMENT.get(category, set())
     for index, candidate in enumerate(candidates, start=1):
         candidate["id"] = f"rc{index}"
         corroboration = 0.06 if candidate["kind"] in aligned else 0.0
@@ -363,7 +400,8 @@ def rank_root_causes(project_path: str | Path,
         candidate["score"] = round(
             candidate["confidence"] + 0.01 * min(5, len(candidate["evidence"])), 4
         )
-    candidates.sort(key=lambda item: (-item["score"], item["kind"]))
+    if "ranking" not in ablate:
+        candidates.sort(key=lambda item: (-item["score"], item["kind"]))
     for index, candidate in enumerate(candidates, start=1):
         candidate["rank"] = index
         candidate["id"] = f"rc{index}"
@@ -372,6 +410,7 @@ def rank_root_causes(project_path: str | Path,
     return {
         "project_path": str(root),
         "traceback_supplied": bool(traceback_text),
+        "ablations": sorted(ablate),
         "analysis": None if analysis is None else {
             "category": analysis.get("category"),
             "confidence": analysis.get("confidence"),

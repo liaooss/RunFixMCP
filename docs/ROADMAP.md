@@ -102,7 +102,18 @@
 - [ ] Causal dependency-to-runtime fault localization across packages
 
 ## 0.9.0 — benchmark and evaluation
-- [ ] Standard research-code dataset for environment build and reproduction
-- [ ] Metrics: environment build rate, diagnosis accuracy, repair rate, reproduction rate, time, cost
-- [ ] Comparison and ablation against Repo2Run, Env-Doctor and ResearchEnvBench-style baselines
-- [ ] Reproducible harness with pinned hardware/software conditions
+- [x] Reproducible benchmark suite (`synthetic-v1`, 11 tasks with recorded ground truth)
+- [x] Metrics: top-1/top-3 accuracy, action accuracy, detection vs control abstention, latency, unauthorized-modification count
+- [x] Ablation study over dependency analysis, classifier corroboration and score ranking
+- [x] Read-only verification by hashing every project file before and after diagnosis
+- [x] Benchmark CLI (`runfix bench`) with JSON/Markdown output
+- [ ] A curated corpus of real research repositories (requires network access and licensing review)
+- [ ] Environment-build and repair success rates (require authorized installs)
+- [ ] Comparison against Repo2Run / Env-Doctor / ResearchEnvBench-style baselines on the same corpus
+- [ ] Reproduction success rate with published target metrics
+
+## 1.0.0 — productisation
+- [ ] Stable CLI, MCP server and Web UI with multi-project task management
+- [ ] Long-task checkpoint recovery across restarts (beyond exit-code recovery)
+- [ ] Permission approval workflow and full operation audit trail
+- [ ] Complete documentation, packaging and installation/upgrade verification on a clean machine
