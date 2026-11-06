@@ -1,35 +1,16 @@
 from __future__ import annotations
 import json, os, urllib.request, urllib.error
 from typing import Any
+from .policy import decide
 
 def heuristic_next(state: dict[str, Any], available: list[str]) -> dict[str, Any]:
-    """Deterministic fallback policy; all actions still pass through the tool registry."""
-    calls = state.get("tool_counts", {})
-    if "scan_project" in available and not calls.get("scan_project"):
-        return {"tool":"scan_project","rationale":"First understand the repository structure and declared dependencies."}
-    if "diagnose_environment" in available and not calls.get("diagnose_environment"):
-        return {"tool":"diagnose_environment","rationale":"Collect interpreter, ML framework and CUDA evidence."}
-    if "static_validation" in available and not calls.get("static_validation"):
-        return {"tool":"static_validation","rationale":"Check syntax, imports and staged validation evidence."}
-    if "run_tests" in available and not calls.get("run_tests"):
-        return {"tool":"run_tests","rationale":"Run the repository test suite because execution permission was granted."}
-    if "run_user_command" in available and not calls.get("run_user_command"):
-        return {"tool":"run_user_command","rationale":"Run the exact command explicitly supplied by the user."}
-    if "analyze_failure" in available and not calls.get("analyze_failure"):
-        return {"tool":"analyze_failure","rationale":"Use the latest failure log and nearby source context to infer the root cause."}
-    if "create_isolated_environment" in available:
-        return {"tool":"create_isolated_environment","rationale":"The failure indicates a missing Python dependency; build an isolated project-local environment from the detected manifest because the user authorized installation."}
-    if "validate_patch" in available and not calls.get("validate_patch"):
-        return {"tool":"validate_patch","rationale":"Check the proposed patch paths and whether it applies cleanly."}
-    if "apply_patch" in available and not calls.get("apply_patch"):
-        return {"tool":"apply_patch","rationale":"Apply the reviewed patch because write permission was explicitly granted."}
-    if "verify_after_patch" in available and not calls.get("verify_after_patch"):
-        return {"tool":"verify_after_patch","rationale":"Re-run tests after the patch to verify the outcome."}
-    if "finish" in available:
-        return {"tool":"finish","rationale":"All required and authorized steps have been considered."}
-    if available:
-        return {"tool":available[0],"rationale":"Continue with the next available allow-listed action."}
-    return {"tool":"finish","rationale":"No further safe, authorized action is available."}
+    """Deterministic, observation-driven fallback policy.
+
+    Unlike the 0.6.x version, this reads the failure category, the patch state and the
+    last verification result, so the next action depends on what the run actually
+    reported. Every action still passes through the tool registry.
+    """
+    return decide(state, available)
 
 def llm_next(state: dict[str, Any], available: list[str]) -> dict[str, Any] | None:
     key = os.getenv("RUNFIX_LLM_API_KEY") or os.getenv("OPENAI_API_KEY")

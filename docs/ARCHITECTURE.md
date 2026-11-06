@@ -1,6 +1,6 @@
-# RunFix Architecture (0.6.1)
+# RunFix Architecture (0.7.0)
 
-RunFix is an agentic orchestration layer for Python-first research-code diagnosis and safe repair.
+RunFix is an agentic orchestration layer for Python-first research-code diagnosis, safe repair and experiment reproduction.
 
 ## Agent loop
 
@@ -101,3 +101,55 @@ Finished transactions are pruned only in states that can no longer be rolled bac
 ## Traceback-guided test selection
 
 `runfix.test_selection.select_tests` extracts project-local traceback frames and compares their module names with static imports in pytest files. A matching subset is run first; if it passes, the full suite is run. If no reliable relationship is found, the full suite is run directly. This selection is a prioritization heuristic, not a formal dependency graph or a coverage guarantee.
+
+## Experiment reproduction layer (0.7.0)
+
+```
+repro/understanding.py  → repro/plan.py → repro/runner.py → repro/metrics.py → repro/report.py
+        (read-only)          (read-only)     (authorized)        (read-only)        (read-only)
+                                             repro/pipeline.py orchestrates the above
+```
+
+- **understanding** never imports target modules and never runs target code. It parses the
+  README, ranks entrypoints with per-score evidence, parses configuration (PyYAML when
+  available, a flat-key scanner otherwise), extracts seeds and training parameters, resolves
+  dataset paths, and detects device requirements and declared CUDA wheel tags.
+- **plan** turns that into explicit steps. It compares the declared wheel tag with the
+  driver's maximum CUDA version and returns `supported` / `unsupported` / `unknown`; a missing
+  input always yields `unknown`. Every step carries `requires_authorization`.
+- **runner** executes exactly one argv command with `shell=False`, a timeout, and a log under
+  `.runfix/repro/<run-id>/`. It records exit code, duration, git commit/branch/dirty,
+  dependency-manifest hashes, interpreter and framework versions, GPU names, and every file
+  created while the run was in flight.
+- **metrics** parses `key=value`, `key: value`, JSON lines and percentages, normalising common
+  aliases, and keeps the source line for each observation.
+- **report** derives the verdict from evidence, never from the exit code alone:
+
+  `inspected → plan_ready → executed → completed → metrics_recorded → metrics_matched → reproduced`
+
+  `completed` needs a metric series or a completion marker. `metrics_matched` needs
+  caller-declared targets. `reproduced` additionally needs a clean git tree.
+
+The reproduction layer shares no state with the repair transaction machinery: it writes only
+under `.runfix/repro/` and never patches project files.
+
+## Observation-driven offline policy (0.7.0)
+
+`runfix/agent/policy.py` replaces the fixed tool sequence that 0.6.x used. It reads the
+observations — failure category, patch state, previous analysis, last verification — and
+returns a decision with a rationale, an optional `strategy`, and a `stop_reason` when it stops.
+Representative stops:
+
+| Evidence | Decision |
+| --- | --- |
+| runtime passed | `finish` with `verified_baseline` |
+| missing dependency, install authorized | `create_isolated_environment` |
+| missing dependency, install unauthorized | `finish` with `needs_install_permission` |
+| GPU OOM | `finish` with `needs_configuration_change` |
+| patchable category, write authorized | `validate_patch` → `apply_patch` → `verify_after_patch` |
+| patchable category, write unauthorized | `finish` with `needs_write_permission_or_patch` |
+| repeated failure | re-analyze instead of repeating the same patch |
+| unclassified failure | `finish` with `no_evidence_backed_repair` |
+
+The policy still cannot generate code patches: patch text comes from the LLM planner. It
+decides *whether and when* to act, not *what code to write*.

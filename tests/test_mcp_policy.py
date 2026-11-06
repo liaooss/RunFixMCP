@@ -84,6 +84,7 @@ def test_fastmcp_registers_public_tools_and_enforces_gates(tmp_path, monkeypatch
         "run_tests", "run_project_command",
         "run_agent", "get_latest_report", "create_isolated_environment",
         "start_task", "get_task_status", "stop_task", "read_task_log", "list_tasks",
+        "plan_reproduction", "run_reproduction",
     }.issubset(server.tools)
 
     scan = server.tools["scan_project"](str(project))
@@ -331,7 +332,7 @@ def test_capabilities_advertise_all_registered_tools(tmp_path, monkeypatch):
     server = create_server(MCPPolicy(allowed_roots=[tmp_path]))
     advertised = set(server.tools["get_server_capabilities"]()["tools"])
     assert advertised == set(server.tools)
-    assert len(advertised) == 20
+    assert len(advertised) == 22
 
 
 def test_rollback_patch_requires_write_permission(tmp_path, monkeypatch):

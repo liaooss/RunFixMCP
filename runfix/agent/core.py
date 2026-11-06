@@ -38,7 +38,7 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
         decision=llm_next(state,available) if use_llm else None
         if decision is None:
             decision=heuristic_next(state,available)
-            decision["planner"]="heuristic_fallback" if use_llm else "heuristic"
+            decision.setdefault("planner","heuristic_fallback" if use_llm else "heuristic")
         tool=decision.get("tool")
         if tool not in available:
             decision=heuristic_next(state,available)
@@ -47,6 +47,8 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
 
         event={"step":step,"planner":decision.get("planner"),"tool":tool,
                "rationale":decision.get("rationale","")}
+        if decision.get("strategy"):
+            event["strategy"]=decision["strategy"]
         try:
             result=box.execute(tool,state)
             state["tool_counts"][tool]=state["tool_counts"].get(tool,0)+1
@@ -68,6 +70,8 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
                     state["observations"]["runtime"]=None
                     state["observations"]["analysis"]=None
             elif tool=="analyze_failure":
+                if state["observations"].get("analysis"):
+                    state["observations"]["previous_analysis"]=state["observations"]["analysis"]
                 state["observations"]["analysis"]=result
                 state["last_error"]=box.latest_log
                 state["observations"]["patch_check"]=None
@@ -92,7 +96,7 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
             state["tool_history"].append({"step":step,"tool":tool,"status":"completed",
                                           "summary":_brief(result,1800)})
             if tool=="finish":
-                stop_reason="planner_finished"
+                stop_reason=decision.get("stop_reason") or "planner_finished"
                 events.append(event)
                 break
         except Exception as exc:
@@ -142,7 +146,8 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
         "Dependency installation is optional, requires explicit permission, supports Conda environment.yml, pip requirements.txt and pyproject.toml, and remains inside .runfix/environments.",
         "The agent does not modify system drivers, global PATH, or the user's existing Conda environment.",
         "Patch verification uses targeted tests when a static traceback-to-test relationship is found, then runs the full suite; otherwise it falls back to the full suite.",
-        "A failed post-patch verification triggers rollback when the transaction files have not been modified independently."]}
+        "A failed post-patch verification triggers rollback when the transaction files have not been modified independently.",
+        "The offline policy re-plans from the failure category and the last verification result, but it cannot generate code patches; patch text comes from the LLM planner."]}
     log="\n\n".join(f"[step {e['step']}] {e['tool']} ({e['status']})\n{e.get('result_summary',e.get('error',''))}" for e in events)
     out=save_report(root,report,log)
     report["report_dir"]=str(out)

@@ -27,6 +27,7 @@ EXPECTED_TOOLS = {
     "get_latest_report",
     "create_isolated_environment",
     "start_task", "get_task_status", "stop_task", "read_task_log", "list_tasks",
+    "plan_reproduction", "run_reproduction",
 }
 
 
@@ -333,6 +334,14 @@ async def _exercise_full_client(client: Any, project: Path) -> dict[str, Any]:
     }, "outcome", "tool_history")
     if agent_report["outcome"] not in {"inspection_only", "diagnosed"}:
         raise RuntimeError(f"Unexpected agent outcome in full mode: {agent_report['outcome']!r}")
+    await invoke("plan_reproduction", {"project_path": str(project)}, "steps", "cuda")
+    reproduction = await invoke("run_reproduction", {
+        "project_path": str(project),
+        "command": [sys.executable, "-c", "print('epoch 1/1 loss=0.42 acc=0.91'); print('final test accuracy: 0.91')"],
+        "confirm_execution": True,
+    }, "verdict", "run")
+    if reproduction["verdict"] not in {"metrics_recorded", "completed", "metrics_matched", "reproduced"}:
+        raise RuntimeError(f"run_reproduction produced an unexpected verdict: {reproduction['verdict']!r}")
     report = await invoke("get_latest_report", {"project_path": str(project)}, "found")
     if report["found"] is not True:
         raise RuntimeError("get_latest_report did not find the report written by run_agent.")
@@ -351,6 +360,7 @@ async def _exercise_full_client(client: Any, project: Path) -> dict[str, Any]:
         "scan_file_count": scan["file_count"],
         "patch_cycle": "applied-and-rolled-back",
         "agent_outcome": agent_report["outcome"],
+        "reproduction_verdict": reproduction["verdict"],
     }
 
 

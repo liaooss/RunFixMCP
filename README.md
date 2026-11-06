@@ -1,10 +1,10 @@
-# RunFix 0.6.1 — Autonomous Research-Code Agent + MCP Server
+# RunFix 0.7.0 — Autonomous Research-Code Agent + MCP Server
 
-**AI-powered Research Runtime Diagnosis and Safe Repair Agent**
+**AI-powered Research Runtime Diagnosis, Safe Repair and Experiment Reproduction Agent**
 
-RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, proposes minimal patches, and verifies outcomes through staged runtime checks.
+RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, proposes minimal patches, verifies outcomes through staged runtime checks, and now plans and runs a reproduction attempt with an evidence ladder that never mistakes an exit code for a result.
 
-> **Status:** 0.6.1 is a stability release. The Agent can diagnose, execute authorized checks, apply transactional patches and roll them back. It cannot yet reproduce a research paper end to end; that is 0.7.0. Read [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md) for the evidence-based audit of what is and is not verified.
+> **Status:** 0.7.0 adds research-experiment reproduction on top of the 0.6.1 stability work. See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md) for the evidence-based audit and [docs/REPRODUCTION.md](docs/REPRODUCTION.md) for the reproduction model.
 
 ## MVP scope
 
@@ -12,7 +12,7 @@ RunFix diagnoses Python / PyTorch research projects, connects environment eviden
 - CPU and single-GPU validation. Multi-GPU/DDP is deferred.
 - An agent loop with a planner, allow-listed tool registry, observations, action history, stop conditions and evidence-backed reports.
 - Project scanning, Python/PyTorch/CUDA diagnosis, traceback analysis, optional LLM planning/patch proposals, guarded patch application, C0-C5 evidence validation, and a local web UI.
-- A local MCP Server (stdio) with 20 tools for diagnostics, gated environment creation, persistent background experiment tasks, log retrieval, patch validation and Agent orchestration.
+- A local MCP Server (stdio) with 22 tools for diagnostics, gated environment creation, persistent background experiment tasks, log retrieval, patch validation, Agent orchestration and experiment reproduction.
 - Optional adapters for separately installed Env-Doctor, Repo2Run, and ResearchEnvBench.
 - Upstream source repositories are not bundled in this package.
 
@@ -82,14 +82,52 @@ For LLM planning and patch proposals, configure `RUNFIX_LLM_API_KEY`, `RUNFIX_LL
 A run is reported as `verified` only when an authorized runtime check passes. A static scan alone is never described as a successful reproduction.
 
 
+## Research experiment reproduction (0.7.0)
+
+```powershell
+# 1. Read the repository and plan only — executes nothing.
+runfix reproduce "D:\research\paper-code" --plan-only
+
+# 2. Run the command the README documents, then report what actually happened.
+runfix reproduce "D:\research\paper-code" --allow-execution --timeout 7200
+
+# 3. Run an explicit command and compare with the numbers the paper reports.
+runfix reproduce "D:\research\paper-code" --allow-execution `
+    --command python train.py --config configs/base.yaml `
+    --expect accuracy=0.812 --expect f1=0.774
+
+# 4. Build the isolated environment first (implies dependency installation), then run.
+runfix reproduce "D:\research\paper-code" --build-environment --allow-execution
+```
+
+The exit code is `0` only for `metrics_matched` / `reproduced` (and for `--plan-only`), so it
+can gate CI. Every attempt is written to `<project>/.runfix/repro/` as a JSON and Markdown
+report containing the verdict ladder, the environment/run plan, the run fingerprint, the
+final metrics, the comparison table and the files the run created.
+
+**A zero exit code is not a reproduction.** `completed` requires a metric series or a
+completion marker; `metrics_matched` requires target values you declared; `reproduced`
+additionally requires a clean git tree. Full details in
+[docs/REPRODUCTION.md](docs/REPRODUCTION.md).
+
 ## Upgrade from an earlier release
 
 See [0.6.1](docs/UPGRADE_0.6.1.md), [0.6.0](docs/UPGRADE_0.6.0.md) or [0.5.0](docs/UPGRADE_0.5.0.md) upgrade instructions. All of them preserve your existing `.conda_env` and `.runfix` folders.
 
+## RunFix 0.7.0 highlights (experiment reproduction)
+
+- **`runfix reproduce`** reads a research repository, plans its environment, runs it when authorized, and writes a `reproduction_report.json` / `.md` that states how far it got and why it stopped there.
+- **An evidence ladder, not an exit code.** `inspected → plan_ready → executed → completed → metrics_recorded → metrics_matched → reproduced`. `completed` requires a metric series or a completion marker; `metrics_matched` requires caller-declared targets; `reproduced` additionally requires a clean git tree.
+- **Real CUDA reasoning.** A declared PyTorch wheel tag (`cu118`, …) is compared with the driver's maximum CUDA version; without both, the verdict is `unknown` rather than a guess.
+- **Dataset awareness without silent downloads.** Path-like config values are resolved and checked; missing data is reported and never fetched.
+- **Full run fingerprint.** Git commit/branch/dirty flag, dependency-manifest SHA-256 values, interpreter and framework versions, GPU names, and every file the run created.
+- **The offline agent now re-plans.** `runfix/agent/policy.py` decides from the failure category, patch state and last verification, and stops with a reason such as `needs_install_permission` instead of walking a fixed tool list.
+- **MCP grew two gated tools**: `plan_reproduction` (read-only) and `run_reproduction` (execution + install gates).
+
 ## RunFix 0.6.1 highlights (stability)
 
 - **MCP SDK v2 support is real, not nominal.** Permission denials now reach the client as tool errors carrying the original reason instead of a bare `Error executing tool ...` crash. Verified against `mcp==2.3.0`.
-- **The MCP self-check exercises the whole contract.** `runfix-mcp-check --full` starts a fully-permitted server on a throwaway project and calls all 20 tools over the protocol, including a full patch → rollback cycle.
+- **The MCP self-check exercises the whole contract.** `runfix-mcp-check --full` starts a fully-permitted server on a throwaway project and calls all 22 tools over the protocol, including a full patch → rollback cycle.
 - **Patch transactions are concurrency-safe.** A per-project cross-process lock serialises validation, backup and apply; a transaction left in `applying` by a crash is restored (or flagged for review) on the next RunFix operation, and `runfix patch-recover` does it explicitly.
 - **Background tasks recover their exit code after a server restart.** Each task runs under a small supervisor that writes the real exit code to disk, so a restarted server reports `completed`/`failed` with the true `returncode` instead of `ended_unobserved`.
 - **Conda environments are reported correctly on Windows.** `build_isolated_environment` re-resolves the interpreter location after creation, so a successful `environment.yml` build no longer returns `created: false`.
@@ -119,20 +157,20 @@ python -m runfix.mcp.server --allowed-root "D:\research"
 # or: runfix mcp --allowed-root "D:\research"
 ```
 
-Verify the actual stdio connection. The default run starts a temporary project, asserts the discovered tool set **equals** the documented 20 tools, checks the reported version, scans the project, lists tasks, and proves that execution / background-task / agent-escalation / installation gates cannot be bypassed by a per-call confirmation:
+Verify the actual stdio connection. The default run starts a temporary project, asserts the discovered tool set **equals** the documented 22 tools, checks the reported version, scans the project, lists tasks, and proves that execution / background-task / agent-escalation / installation gates cannot be bypassed by a per-call confirmation:
 
 ```powershell
 python .\scripts\check_mcp_connection.py
 # or, after installation: runfix-mcp-check
 ```
 
-Add `--full` to also start a fully-permitted server on the same throwaway project and call **all 20 tools** over the protocol (scan, diagnose, validate, analyse, source context, patch validate/apply/rollback/transaction, tests, command, environment, task lifecycle, agent run, report):
+Add `--full` to also start a fully-permitted server on the same throwaway project and call **all 22 tools** over the protocol (scan, diagnose, validate, analyse, source context, patch validate/apply/rollback/transaction, tests, command, environment, task lifecycle, agent run, reproduction plan/run, report):
 
 ```powershell
 python -m runfix.mcp.smoke --full
 ```
 
-The server exposes 20 tools, including `create_isolated_environment`, background task management, `rollback_patch`, and `get_patch_transaction` for safe environment, experiment and repair workflows.
+The server exposes 22 tools, including `create_isolated_environment`, background task management, `rollback_patch`, `get_patch_transaction`, and the reproduction pair `plan_reproduction` / `run_reproduction`.
 
 **Security:** project paths are restricted to configured allowed roots. Execution, writes and package installation are disabled by default. Enable them at server startup (`--enable-execution`, `--enable-write`, `--enable-install`) and also require explicit per-call confirmation. See [docs/MCP_SERVER.md](docs/MCP_SERVER.md) for Codex configuration and examples.
 
@@ -268,6 +306,7 @@ It does not silently run the full 44-repository benchmark. Full paper reproducti
 | `runfix validate <project> [--python P] [--include-gpu] [--command ...]` | C0–C5 staged validation with saved evidence |
 | `runfix patch-check / patch-apply / patch-recover <project> ...` | Validate, apply and recover transactional patches |
 | `runfix agent <project> [flags]` | Plan–act–observe agent (`--goal`, `--max-steps`, `--timeout`) |
+| `runfix reproduce <project> [--plan-only] [--allow-execution] [--expect N=V]` | Understand, plan, run when authorized, and report reproducibility |
 | `runfix web [--host H] [--port N]` | Loopback-only Web UI (`/api/health`, `/api/scan`, `/api/diagnose`, `/api/validate`, `/api/analyze`, `/api/agent`) |
 | `runfix mcp [--allowed-root R ...] [--enable-execution] [--enable-write] [--enable-install]` | stdio MCP server |
 | `runfix integrations [--python P] [--repo2run-path R] [--researchenvbench-path R]` | Report which optional upstream tools are present |
@@ -278,7 +317,7 @@ It does not silently run the full 44-repository benchmark. Full paper reproducti
 python -m pip install -e ".[dev,mcp]"
 python -m pytest -q                                  # unit + integration suite
 python -m runfix.mcp.smoke                           # real stdio handshake and permission gates
-python -m runfix.mcp.smoke --full                    # all 20 tools over the MCP protocol
+python -m runfix.mcp.smoke --full                    # all 22 tools over the MCP protocol
 ```
 
 The MCP end-to-end test is skipped automatically when the optional `mcp` extra is not installed. `python -m pytest -q` must report zero failures for a release to be considered verified; see [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md) for the audit that established that requirement.

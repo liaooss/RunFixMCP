@@ -213,6 +213,7 @@ def create_server(policy: MCPPolicy):
         mcp = Server("RunFix", instructions=MCP_INSTRUCTIONS)
 
     tool_error_type = _load_sdk_tool_error()
+    registered: list[str] = []
 
     def tool():
         """Register a tool, translating anticipated RunFix failures for the SDK in use."""
@@ -225,6 +226,7 @@ def create_server(policy: MCPPolicy):
                 except Exception as exc:
                     raise _translate_tool_failure(exc, tool_error_type) from exc
 
+            registered.append(fn.__name__)
             return mcp.tool()(guarded)
 
         return register
@@ -244,15 +246,10 @@ def create_server(policy: MCPPolicy):
                 "file_modification": policy.enable_write,
                 "dependency_installation": policy.enable_install,
             },
-            "tools": [
-                "get_server_capabilities", "scan_project", "diagnose_environment", "validate_project",
-                "analyze_failure", "get_source_context", "validate_patch",
-                "apply_patch", "rollback_patch", "get_patch_transaction",
-                "run_tests", "run_project_command",
-                "create_isolated_environment", "start_task", "get_task_status",
-                "stop_task", "read_task_log", "list_tasks",
-                "run_agent", "get_latest_report",
-            ],
+            # Derived from the decorators that actually ran, so the advertised list can
+            # never drift away from the registered one.
+            "tool_count": len(registered),
+            "tools": sorted(registered),
         }
 
     @tool()
@@ -428,6 +425,35 @@ def create_server(policy: MCPPolicy):
             allow_write=bool(allow_write and policy.enable_write and confirm_write),
             use_llm=use_llm, command=command,
             allow_install=bool(allow_install and policy.enable_install and confirm_install),
+        )
+
+    @tool()
+    def plan_reproduction(project_path: str, python_executable: str = "") -> dict[str, Any]:
+        """Read a research repository and return an explicit environment/run plan with CUDA, GPU, dataset and entrypoint evidence. Never installs or executes project code."""
+        root = policy.project(project_path)
+        from ..repro.plan import build_environment_plan
+        plan = build_environment_plan(root, python_executable or None)
+        plan.pop("understanding_raw", None)
+        return plan
+
+    @tool()
+    def run_reproduction(project_path: str, command: list[str],
+                         python_executable: str = "", timeout: int = 1800,
+                         expected_metrics: dict[str, float] | None = None,
+                         completion_regex: str = "",
+                         build_environment: bool = False,
+                         confirm_execution: bool = False,
+                         confirm_install: bool = False) -> dict[str, Any]:
+        """Run one authorized reproduction attempt and return its evidence-backed report. Requires the execution gate; building the environment also requires the install gate."""
+        root = policy.project(project_path)
+        policy.require_execution(confirm_execution)
+        if build_environment:
+            policy.require_install(confirm_install)
+        from ..repro.pipeline import reproduce
+        return reproduce(
+            root, command=command, python_executable=python_executable or None,
+            timeout=timeout, allow_execute=True, expected_metrics=expected_metrics or None,
+            completion_regex=completion_regex or None, build_environment=bool(build_environment),
         )
 
     @tool()

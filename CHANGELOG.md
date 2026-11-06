@@ -1,5 +1,55 @@
 # Changelog
 
+## 0.7.0 — research experiment reproduction agent
+
+RunFix can now read a research repository, plan its environment, run it under explicit
+authorization, and report how far it actually got — with an evidence ladder that refuses to
+call an exit code a reproduction.
+
+### Added
+
+- **`runfix reproduce`**: understand → plan → run → evidence → verdict, written to
+  `<project>/.runfix/repro/` as `reproduction_report.json` and `.md`.
+- **Project understanding** (`runfix/repro/understanding.py`): README install/run commands,
+  ranked entrypoints with per-score evidence, config parsing with a PyYAML-free fallback,
+  seeds and training parameters, dataset references checked for existence, device
+  requirements, and declared CUDA wheel tags.
+- **Environment planning** (`runfix/repro/plan.py`): manifest selection, Python requirement
+  check, dataset readiness, GPU visibility, and a CUDA compatibility verdict derived from the
+  declared wheel tag versus the driver's maximum CUDA version. Unknown evidence yields
+  `unknown`, never a guess.
+- **Reproduction runs** (`runfix/repro/runner.py`): one authorized argv command with a
+  timeout, captured log, and a fingerprint (git commit/branch/dirty, dependency-manifest
+  SHA-256, interpreter, framework versions, GPU names) plus every file the run created.
+- **Metric extraction** (`runfix/repro/metrics.py`): `key=value`, `key: value`, JSON lines and
+  percentages, with alias normalisation (`acc` → `accuracy`) and the source line as evidence.
+- **Verdict ladder** (`runfix/repro/report.py`): `inspected` → `plan_ready` → `executed` →
+  `completed` → `metrics_recorded` → `metrics_matched` → `reproduced`. `completed` requires
+  positive completion evidence; `metrics_matched` and above require caller-declared targets;
+  `reproduced` also requires a clean git tree.
+- **Observation-driven agent policy** (`runfix/agent/policy.py`): the offline planner now
+  reads the failure category, patch state and last verification result instead of walking a
+  fixed tool list, and stops with a machine-readable reason (`needs_install_permission`,
+  `needs_configuration_change`, `needs_write_permission_or_patch`, `no_evidence_backed_repair`,
+  `verified_baseline`, …).
+- **MCP tools `plan_reproduction` and `run_reproduction`** (22 tools total), with the
+  execution and install gates.
+- `docs/REPRODUCTION.md`.
+
+### Changed
+
+- `get_server_capabilities` now derives the advertised tool list from the tools that were
+  actually registered, so the advertised and registered sets cannot drift.
+- The agent records a per-step `strategy` and a `stop_reason`, and `policy` as the planner
+  name when the offline policy made the decision.
+
+### Tests
+
+- 46 new tests covering understanding, planning, CUDA assessment, metric parsing, the
+  verdict ladder, run evidence collection and the policy. Suite: 151 passed, 2 skipped
+  (the two symlink tests skip only when the account cannot create symlinks).
+
+
 ## 0.6.1 — stability, real MCP v2 verification and crash-safe repair
 
 Verified on Windows 11 + Anaconda + Python 3.11 against `mcp==2.3.0`. The full test

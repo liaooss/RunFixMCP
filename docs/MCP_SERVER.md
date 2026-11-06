@@ -1,7 +1,7 @@
 
 # RunFix MCP Server
 
-RunFix 0.6.1 exposes project inspection, isolated environment setup and persistent background experiment management through the Model Context Protocol (MCP). The first transport is **stdio**, intended for local clients such as Codex and Claude Desktop. RunFix prefers the current MCP Python SDK v2 `MCPServer` API and retains a v1 `FastMCP` compatibility fallback; the v2 path is verified against `mcp==2.3.0`.
+RunFix 0.7.0 exposes project inspection, isolated environment setup, persistent background experiment management and experiment reproduction through the Model Context Protocol (MCP). The first transport is **stdio**, intended for local clients such as Codex and Claude Desktop. RunFix prefers the current MCP Python SDK v2 `MCPServer` API and retains a v1 `FastMCP` compatibility fallback; the v2 path is verified against `mcp==2.3.0`.
 
 ## 1. Install
 
@@ -75,7 +75,7 @@ python .\scripts\check_mcp_connection.py
 The smoke test launches the RunFix MCP server as a child process and uses the official MCP Python SDK client to:
 
 1. Connect over the real `stdio` transport.
-2. Assert that the discovered tool set **equals** the documented 20 tools (an extra or missing tool fails the check).
+2. Assert that the discovered tool set **equals** the documented 22 tools (an extra or missing tool fails the check).
 3. Call `get_server_capabilities` and check that the reported version equals `runfix.__version__`.
 4. Call `scan_project` and `list_tasks` against a temporary, harmless test project.
 5. Attempt a project command, background task launch, `create_isolated_environment` and an escalating `run_agent` call with per-call confirmation while the server gates are disabled; all must be rejected with the original denial message.
@@ -182,6 +182,8 @@ Starting and stopping code require `--enable-execution` plus per-call `confirm_e
 | `read_task_log` | Read a bounded, redacted log tail | Read |
 | `list_tasks` | List recent background tasks | Read |
 | `run_agent` | Start the full RunFix plan–act–observe repair workflow | Per-capability gates |
+| `plan_reproduction` | Read a research repository and return an environment/run plan with CUDA, GPU, dataset and entrypoint evidence | Read + interpreter probe |
+| `run_reproduction` | Run one authorized reproduction attempt and return its evidence-backed report | Execution gate; install gate when `build_environment=true` |
 | `get_latest_report` | Read the latest RunFix report | Read |
 
 ## Patch transactions and rollback

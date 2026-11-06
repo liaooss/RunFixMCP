@@ -78,9 +78,20 @@
 - [ ] Codex / Claude Desktop host registration on a user machine (requires the host client)
 
 ## 0.7.0 — research experiment reproduction agent
-- [ ] **Adaptive offline planner**: make the deterministic policy read observations, not just call counts
-- [ ] Repository understanding: README, configs, entrypoints and experiment parameters
-- [ ] Environment plan: Python/PyTorch/CUDA compatibility and hardware requirements
-- [ ] Dataset and weight discovery with explicit authorization for downloads
-- [ ] Run, collect metrics/logs/artifacts, record seeds, git revision and hardware
-- [ ] Reproduction report that does not treat "exit code 0" as success
+- [x] **Adaptive offline planner**: the policy reads observations, not just call counts
+- [x] Repository understanding: README, configs, entrypoints and experiment parameters
+- [x] Environment plan: Python/PyTorch/CUDA compatibility and hardware requirements
+- [x] Dataset discovery with missing-path reporting and no unauthorized downloads
+- [x] Run, collect logs/metrics/artifacts, record seeds, git revision and hardware
+- [x] Reproduction report with an evidence ladder that never equates exit code 0 with success
+- [x] MCP tools `plan_reproduction` / `run_reproduction` (22 tools)
+- [ ] Automatic environment construction inside the reproduction flow (currently opt-in via `--build-environment`)
+- [ ] Training-curve comparison against paper figures
+- [ ] Multi-run averaging with variance reporting
+
+## 0.8.0 — deep diagnosis and adaptive repair
+- [ ] Multi-source evidence graph (traceback × environment × config × tests × logs)
+- [ ] Root-cause candidate ranking with confidence and citations
+- [ ] Dependency conflict solving and version compatibility search
+- [ ] Repair strategy selection driven by the failure evidence
+- [ ] Docker/WSL isolated execution

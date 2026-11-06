@@ -393,3 +393,53 @@ python -m pytest -q   →   105 passed, 2 skipped
 对比 0.6.0 的 `4 failed, 61 passed, 3 skipped`：4 个失败全部修复，新增 42 个回归测试，MCP 端到端测试从跳过变为通过。
 
 **尚未验证、不得声称已验证的事项**：LLM 规划器与 LLM 补丁生成（无 API key）、Codex / Claude Desktop 宿主机注册（本机未安装客户端）、真实 conda 环境创建（本机 conda 插件与 TOS 缓存故障，见 §0 与 §3.4）、Docker/WSL 沙箱、实验复现能力。
+
+---
+
+## 11. 0.7.0 增量（回填）
+
+0.7.0 在 0.6.1 基础上交付“科研实验自动复现”，并同时关闭审计 §4.4 与 §5/S2 中的两项遗留。
+
+### 11.1 关闭的遗留项
+
+| 编号 | 缺陷 | 处置 |
+| --- | --- | --- |
+| §4.4 | Agent 固定序列、无重规划 | **已修复**：新增 `runfix/agent/policy.py`，按失败类别、补丁状态、上一次验证结果决策，并输出 `stop_reason`（`needs_install_permission` / `needs_configuration_change` / `needs_write_permission_or_patch` / `no_evidence_backed_repair` / `verified_baseline` 等）。仍不能生成补丁——补丁文本只来自 LLM。 |
+| §5 S2 | 环境诊断默认探测服务端解释器 | **部分修复**：`plan_reproduction` 与复现流程显式使用“所选解释器”，并在报告中写明 `python_executable` 与推断来源；`diagnose_environment` MCP 工具保持原语义（显式传参优先）。 |
+
+### 11.2 新增能力
+
+| 能力 | 实现 | 验证 |
+| --- | --- | --- |
+| 项目理解（README/入口/配置/种子/数据集/设备/CUDA 标签） | `runfix/repro/understanding.py` | `tests/test_repro_understanding.py` |
+| 环境与兼容性计划（含 CUDA 轮子标签 vs 驱动） | `runfix/repro/plan.py` | 同上（supported / unsupported / unknown 三态） |
+| 受控执行 + 指纹 + 产物收集 | `runfix/repro/runner.py` | `tests/test_repro_pipeline.py` |
+| 指标提取与别名归一 | `runfix/repro/metrics.py` | 同上 |
+| 证据阶梯与报告 | `runfix/repro/report.py` | 同上（含“退出码 0 不等于完成”专项用例） |
+| CLI `runfix reproduce` | `runfix/cli.py` | 手动 + 测试 |
+| MCP `plan_reproduction` / `run_reproduction`（共 22 工具） | `runfix/mcp/server.py` | `runfix.mcp.smoke --full` → 22/22 |
+
+### 11.3 0.7.0 测试基线
+
+```
+python -m pytest -q                → 152 passed, 2 skipped
+python -m runfix.mcp.smoke --full  → 22/22 tools exercised, exit 0
+```
+
+端到端演示（真实运行，非模拟）：对一个带 git 提交、README、配置与产物的演示论文项目执行
+`runfix reproduce`，四种判决均按设计出现：
+
+| 场景 | 结果 |
+| --- | --- |
+| `--expect accuracy=0.8 --expect f1=0.74`（与运行结果一致） | `reproduced`（退出码 0，产物 `outputs/base/metrics.json` 被收集） |
+| 不声明期望值 | `metrics_recorded`，退出码 1，原因写明“无法与论文比较” |
+| `--command python -c "print('done')"`（退出码 0 但无任何证据） | `executed` / `process_exited`，原因写明“零退出码不是证据” |
+| `--expect accuracy=0.99`（与实测 0.80 不符） | `metrics_recorded`，原因给出 expected/observed/allowed delta |
+
+### 11.4 仍然存在的问题（0.8.0 及以后）
+
+- 复现流程本身不会自动构建环境（需显式 `--build-environment`），也没有“失败→调整→重试”的自动回路。
+- 指标比较是“数值 vs 用户声明”，尚不能与论文图表/多随机种子方差对比。
+- 根因分析仍是“规则 + 静态证据”，没有多源证据图与置信度排序（0.8.0）。
+- 依赖冲突求解、Docker/WSL 隔离、基准评测（0.9.0）均未开始。
+- LLM 规划器与补丁生成仍未在真实 API 下验证。

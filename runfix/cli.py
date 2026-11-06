@@ -42,6 +42,16 @@ def parser():
     x.add_argument("--allow-install",action="store_true",help="Allow requirements.txt installation into a project-local venv")
     x.add_argument("--command",nargs=argparse.REMAINDER)
     x=sub.add_parser("web"); x.add_argument("--host",default="127.0.0.1"); x.add_argument("--port",type=int,default=8765)
+    x=sub.add_parser("reproduce",help="Understand a research project, plan its environment, run it when authorized, and report reproducibility")
+    x.add_argument("project"); x.add_argument("--python",dest="py")
+    x.add_argument("--command",nargs=argparse.REMAINDER)
+    x.add_argument("--timeout",type=int,default=1800)
+    x.add_argument("--plan-only",action="store_true",help="Understand and plan only; never execute project code")
+    x.add_argument("--allow-execution",action="store_true",help="Allow the selected run command to execute")
+    x.add_argument("--build-environment",action="store_true",help="Build the isolated environment first (implies dependency installation)")
+    x.add_argument("--install-timeout",type=int,default=1800)
+    x.add_argument("--expect",action="append",default=[],metavar="NAME=VALUE",help="Declared target metric; repeatable")
+    x.add_argument("--completion-regex",help="Regex that marks a successful completion in the run log")
     x=sub.add_parser("mcp",help="Start the RunFix MCP server over stdio")
     x.add_argument("--allowed-root",action="append",default=[],help="Allowed project root; repeat to add more.")
     x.add_argument("--enable-execution",action="store_true",help="Allow project test/command execution after per-call confirmation.")
@@ -100,6 +110,22 @@ def main(argv=None):
                              cmd,a.timeout,a.allow_install)
             print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
             return 1 if result["outcome"] in {"diagnosed","patched_not_verified"} else 0
+        if a.action=="reproduce":
+            from .repro import reproduce
+            root=project_dir(a.project); cmd=a.command or None
+            if cmd and cmd[0]=="--": cmd=cmd[1:]
+            expected={}
+            for item in a.expect:
+                if "=" not in item:
+                    raise ValueError(f"--expect requires NAME=VALUE, got {item!r}")
+                name,value=item.split("=",1)
+                expected[name.strip()]=float(value)
+            result=reproduce(root,cmd,a.py,a.timeout,a.allow_execution,a.plan_only,
+                             expected or None,a.completion_regex,a.build_environment,a.install_timeout)
+            print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
+            if a.plan_only:
+                return 0
+            return 0 if result["verdict"] in {"metrics_matched","reproduced"} else 1
         if a.action=="web":
             from .web.server import serve
             serve(a.host,a.port); return 0
