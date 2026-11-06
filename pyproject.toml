@@ -1,0 +1,29 @@
+[build-system]
+requires = ["setuptools>=77", "wheel"]
+build-backend = "setuptools.build_meta"
+
+[project]
+name = "runfix-agent"
+version = "0.6.1"
+description = "Autonomous agent for evidence-driven diagnosis and safe repair of research code"
+readme = "README.md"
+requires-python = ">=3.10"
+license = "MIT"
+license-files = ["LICENSE"]
+dependencies = []
+
+[project.optional-dependencies]
+envdoctor = ["env-doctor>=0.3.5"]
+mcp = ["mcp>=1.9.0,<3.0.0"]
+dev = ["pytest>=8.0"]
+
+[project.scripts]
+runfix = "runfix.cli:main"
+runfix-mcp = "runfix.mcp.server:main"
+runfix-mcp-check = "runfix.mcp.smoke:main"
+
+[tool.setuptools.packages.find]
+include = ["runfix*"]
+
+[tool.pytest.ini_options]
+testpaths = ["tests"]

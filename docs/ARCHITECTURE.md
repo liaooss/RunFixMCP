@@ -1,0 +1,103 @@
+# RunFix Architecture (0.6.1)
+
+RunFix is an agentic orchestration layer for Python-first research-code diagnosis and safe repair.
+
+## Agent loop
+
+```mermaid
+flowchart TD
+  U[User goal and project path] --> P[Agent Planner]
+  P -->|select one allow-listed action| T[Tool Registry]
+  T --> S[Project Scanner]
+  T --> E[Environment Diagnosis]
+  T --> V[Static Validation]
+  T --> R[Authorized Test / Command Runner]
+  T --> A[Traceback and Source Analyzer]
+  T --> I[Manifest-aware Isolated Environment Builder]
+  T --> D[Patch Validator and Applier]
+  S --> O[Observation State and Evidence]
+  E --> O
+  V --> O
+  R --> O
+  A --> O
+  I --> O
+  D --> O
+  O --> P
+  D -->|patch applied| R
+  P -->|finish / step limit| F[Report and Agent Trace]
+  O --> F
+```
+
+## Agent components
+
+1. **Planner (`runfix/agent/brain.py`)**
+   - Calls an OpenAI-compatible LLM to choose the next tool when `--use-llm` is enabled and credentials are configured.
+   - Falls back to a deterministic policy when the LLM is disabled, unavailable or returns an invalid action.
+   - The planner receives only the currently authorized tool names; it cannot create arbitrary tools or shell commands.
+
+2. **Tool registry (`runfix/agent/tools.py`)**
+   - `scan_project`
+   - `diagnose_environment`
+   - `static_validation`
+   - `run_tests`
+   - `run_user_command` (only the exact command supplied by the user)
+   - `analyze_failure`
+   - `create_isolated_environment` (optional; Conda `environment.yml`, pip `requirements.txt`, or `pyproject.toml`)
+   - `validate_patch`
+   - `apply_patch`
+   - `verify_after_patch`
+   - `finish`
+
+3. **Agent controller (`runfix/agent/core.py`)**
+   - Maintains observations and tool history.
+   - Selects the next available action, executes it, records evidence and loops.
+   - Limits the run to 20 steps and at most two patch rounds.
+   - Saves `report.json`, `report.md`, `execution.log` and `agent_state.json`.
+
+4. **Safety policy**
+   - Reading and static scanning are enabled by default.
+   - Project-code execution requires `--allow-project-code`.
+   - Patch application requires `--allow-write` and project-code permission.
+   - Dependency installation requires explicit execution/install authorization and writes only to `<project>/.runfix/environments`, using a manifest-specific fingerprint.
+   - No driver changes, global PATH edits, privilege elevation or arbitrary planner-provided shell commands.
+
+## Upstream integrations
+
+- Env-Doctor is an optional environment-diagnostic adapter.
+- Repo2Run is an optional Linux/WSL2 environment-build adapter and is not automatically run by the planner.
+- ResearchEnvBench concepts inform staged validation/reporting; RunFix does not claim to execute the full upstream benchmark.
+
+## Limitations
+
+- Python-first; supported environment manifests are Conda `environment.yml`, pip `requirements.txt`, and `pyproject.toml`.
+- Poetry/uv lock solving, pause/resume for background tasks, and system driver repair are not automated.
+- LLM planning and patch proposals require a configured API.
+- A passing test suite is not proof of scientific correctness or exact paper reproduction.
+
+## Background experiment tasks
+
+`runfix.task_manager.TaskManager` launches explicit argv commands without a shell, persists task metadata and logs under `<project>/.runfix/tasks/`, and supports status polling, log tails, listing and termination. Each task records Git revision, interpreter, dependency-manifest hashes and an experiment fingerprint. PID start identities are checked before attempting to control a process after an MCP server restart.
+
+Since 0.6.1 each task runs under a tiny supervisor (`<task-dir>/supervisor.py`) that starts the real command, waits for it and writes `process_result.json` with the true exit code. The task ID therefore survives a server restart with its result intact: `status()` reports `completed`/`failed` plus `returncode`, and `exit_code_source` says whether the code came from the live process handle or from the supervisor record. A task whose supervisor was killed as well falls back to `ended_unobserved` with `returncode: null`, which is the honest answer.
+
+## Patch transaction lifecycle
+
+`validate_patch` checks path boundaries, `git apply --check`, and parses changed Python files in a temporary tree. `apply_patch` creates a transaction directory with original snapshots and SHA-256 hashes before applying the diff. The transaction records the post-patch hashes after a successful apply.
+
+`rollback_patch` first checks every current target against the recorded post-patch hash. If any target differs, it refuses the whole rollback rather than overwriting an independent edit. Otherwise it restores original files and removes files that were newly created by the patch. The Agent invokes this rollback automatically when post-patch verification fails.
+
+**Concurrency (0.6.1).** `apply_patch` and `rollback_patch` run under a per-project lock: a module-level re-entrant thread lock plus an OS file lock on `<project>/.runfix/patch_transactions/.lock` (`msvcrt` byte-range on Windows, `flock` on POSIX). Validation happens before the lock; backup, `git apply` and metadata writes happen inside it, so two RunFix processes cannot interleave on the same project.
+
+**Crash recovery (0.6.1).** A transaction left with `status: "applying"` (the process died between `git apply` and the status write) is resolved by `_recover_interrupted_locked`, which runs inside every lock acquisition and is also exposed as `runfix patch-recover`:
+
+| Current file hash | Meaning | Action |
+| --- | --- | --- |
+| equals `sha256_after` | the patch was applied | restore the backups, status → `recovered_from_interrupt` |
+| equals `sha256_before` | the patch never landed | leave the file alone, status → `recovered_from_interrupt` |
+| anything else | someone edited the file after the crash | status → `interrupted_needs_review`, file untouched, reported to the caller |
+
+Finished transactions are pruned only in states that can no longer be rolled back (`rolled_back`, `apply_failed`) and only beyond `TRANSACTION_RETENTION` entries; applied transactions are always kept, because deleting one would destroy the ability to roll back.
+
+## Traceback-guided test selection
+
+`runfix.test_selection.select_tests` extracts project-local traceback frames and compares their module names with static imports in pytest files. A matching subset is run first; if it passes, the full suite is run. If no reliable relationship is found, the full suite is run directly. This selection is a prioritization heuristic, not a formal dependency graph or a coverage guarantee.

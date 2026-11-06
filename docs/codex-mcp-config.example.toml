@@ -1,0 +1,14 @@
+[mcp_servers.runfix]
+command = "E:\\Projects\\RunFix\\.conda_env\\python.exe"
+args = [
+  "-m",
+  "runfix.mcp.server",
+  "--transport",
+  "stdio",
+  "--allowed-root",
+  "D:\\research"
+]
+cwd = "E:\\Projects\\RunFix"
+
+startup_timeout_sec = 30
+tool_timeout_sec = 120
