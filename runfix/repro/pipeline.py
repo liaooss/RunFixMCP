@@ -110,4 +110,12 @@ def reproduce(project_path: str | Path,
     report["report_dir"] = str(directory)
     report["report_json"] = str(directory / "reproduction_report.json")
     report["report_markdown"] = str(directory / "reproduction_report.md")
+
+    from ..audit import audit as _audit
+    _audit(root, "reproduce.run", target=" ".join(argv or [])[:400],
+           outcome=report["verdict"], actor="runfix.reproduction",
+           details={"run_status": (run or {}).get("status"),
+                    "elapsed_seconds": (run or {}).get("duration_seconds"),
+                    "sandbox": sandbox, "expected_metrics": expected_metrics,
+                    "report": report["report_json"]})
     return report

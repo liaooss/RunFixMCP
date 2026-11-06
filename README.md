@@ -1,10 +1,10 @@
-# RunFix 0.9.0 — Autonomous Research-Code Agent + MCP Server
+# RunFix 1.0.0 — Autonomous Research-Code Agent + MCP Server
 
 **AI-powered Research Runtime Diagnosis, Evidence-based Root-Cause Analysis, Safe Repair and Experiment Reproduction Agent**
 
-RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, ranks root causes with cited evidence, applies and rolls back minimal patches, plans and runs a reproduction attempt with an evidence ladder, can execute under Docker/WSL isolation, and measures its own diagnosis with a reproducible benchmark.
+RunFix diagnoses Python / PyTorch research projects, connects environment evidence with source-code errors, ranks root causes with cited evidence, applies and rolls back minimal patches, plans and runs a reproduction attempt with an evidence ladder, can execute under Docker/WSL isolation, measures its own diagnosis with a reproducible benchmark, and now records every privileged action in a tamper-evident audit trail with checkpointed, resumable agent runs and a multi-project console.
 
-> **Status:** 0.9.0 adds a reproducible benchmark and ablation study on top of the 0.8.0 depth diagnosis. See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md), [docs/DIAGNOSIS.md](docs/DIAGNOSIS.md), [docs/REPRODUCTION.md](docs/REPRODUCTION.md) and [docs/BENCHMARK.md](docs/BENCHMARK.md).
+> **Status:** 1.0.0 completes the product surface (audit trail, checkpoint resume, explicit approvals, multi-project console). See [docs/CURRENT_STATE_AUDIT.md](docs/CURRENT_STATE_AUDIT.md) for the evidence-based audit, [docs/DIAGNOSIS.md](docs/DIAGNOSIS.md), [docs/REPRODUCTION.md](docs/REPRODUCTION.md), [docs/BENCHMARK.md](docs/BENCHMARK.md), [docs/AUDIT_LOG.md](docs/AUDIT_LOG.md), [docs/WEB_UI.md](docs/WEB_UI.md) and [docs/SAFETY.md](docs/SAFETY.md).
 
 ## MVP scope
 
@@ -113,6 +113,14 @@ additionally requires a clean git tree. Full details in
 ## Upgrade from an earlier release
 
 See [0.6.1](docs/UPGRADE_0.6.1.md), [0.6.0](docs/UPGRADE_0.6.0.md) or [0.5.0](docs/UPGRADE_0.5.0.md) upgrade instructions. All of them preserve your existing `.conda_env` and `.runfix` folders.
+
+## RunFix 1.0.0 highlights (product surface)
+
+- **Tamper-evident audit trail.** Every privileged action (patch apply/rollback/recover, environment build, task start/stop, agent run, reproduction run, approval grant/revoke) is appended to `.runfix/audit/audit-YYYY-MM.jsonl` with a SHA-256 hash chain. `runfix audit <project> --verify` recomputes the chain and exits non-zero if an entry was edited, removed or reordered.
+- **Checkpointed, resumable agent runs.** A checkpoint is written after every step; `runfix agent <project> --resume <run_key>` continues from the next step instead of replaying patch applications. Resuming re-uses the permissions the run was started with, so it cannot escalate.
+- **Explicit approvals.** `runfix approvals <project> --grant patch.apply --uses 2 --ttl-minutes 30` issues an expiring, one-shot grant; the MCP server enforces the project policy with `--require-approval` and tells the caller exactly which command to run. Approvals only narrow what the permission flags already allow.
+- **Multi-project console.** `runfix web --state .\.runfix-web` keeps a project registry and shows tasks, latest report, reproduction verdict and audit count per project. GET endpoints are strictly read-only; `0.0.0.0` binding is rejected.
+- Verified on this machine: `249 passed / 2 skipped`, MCP `--full` 23/23, `runfix audit --verify` → `{"ok": true, "checked": 3}`, and the console exercised over real HTTP.
 
 ## RunFix 0.9.0 highlights (benchmark and ablation)
 
@@ -328,6 +336,10 @@ It does not silently run the full 44-repository benchmark. Full paper reproducti
 | `runfix reproduce <project> [--plan-only] [--allow-execution] [--expect N=V] [--sandbox docker\|wsl]` | Understand, plan, run when authorized, and report reproducibility |
 | `runfix sandbox-info` | Which isolation backends (Docker / WSL) this machine provides |
 | `runfix bench [--ablations] [--task ID] [--out DIR]` | Reproducible diagnosis benchmark and ablation study |
+| `runfix audit <project> [--verify] [--filter-action A]` | Read or cryptographically verify the audit trail |
+| `runfix approvals <project> [--grant A \| --revoke A \| --require A]` | Manage expiring, one-shot approvals |
+| `runfix runs <project> [--show RUN_KEY]` | List or inspect durable agent checkpoints |
+| `runfix web [--state DIR]` | Multi-project console with a project registry |
 | `runfix web [--host H] [--port N]` | Loopback-only Web UI (`/api/health`, `/api/scan`, `/api/diagnose`, `/api/validate`, `/api/analyze`, `/api/agent`) |
 | `runfix mcp [--allowed-root R ...] [--enable-execution] [--enable-write] [--enable-install]` | stdio MCP server |
 | `runfix integrations [--python P] [--repo2run-path R] [--researchenvbench-path R]` | Report which optional upstream tools are present |

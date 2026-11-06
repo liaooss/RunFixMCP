@@ -1,4 +1,4 @@
-# RunFix Architecture (0.8.0)
+# RunFix Architecture (1.0.0)
 
 RunFix is an agentic orchestration layer for Python-first research-code diagnosis, safe repair, experiment reproduction and isolated execution.
 
@@ -101,6 +101,42 @@ Finished transactions are pruned only in states that can no longer be rolled bac
 ## Traceback-guided test selection
 
 `runfix.test_selection.select_tests` extracts project-local traceback frames and compares their module names with static imports in pytest files. A matching subset is run first; if it passes, the full suite is run. If no reliable relationship is found, the full suite is run directly. This selection is a prioritization heuristic, not a formal dependency graph or a coverage guarantee.
+
+## Product surface (1.0.0)
+
+```
+audit.py       ← every privileged module appends a hash-chained entry
+checkpoint.py  ← agent writes one per completed step; --resume continues from it
+approvals.py   ← expiring, one-shot grants; consumed by the MCP tool wrapper
+web/server.py  ← project registry + read-only task/audit/report views
+```
+
+**Audit.** `audit(project, action, target, outcome, actor, details)` appends
+`{seq, ts, actor, action, target, outcome, details, prev_hash, hash}` to
+`.runfix/audit/audit-YYYY-MM.jsonl`, where `hash = sha256(canonical_json(entry minus hash))` and
+`prev_hash` is the previous entry's hash. `<project>/.runfix/audit` rotates monthly; the chain
+spans files. Auditing is deliberately *non-fatal*: a write failure is printed to stderr and
+returned to the caller rather than aborting a repair.
+
+**Checkpoints.** After each agent step, `save_checkpoint(project, run_key, {...})` atomically
+replaces `.runfix/checkpoints/<run_key>/checkpoint.json` with the observations, the event
+history, the tool-box state and the loop position. `run_agent(resume_run_id=...)` rebuilds the
+toolbox via `ToolBox.from_state` and starts at `step + 1`. Because the tool box records
+`patch_applied`, `repair_round` and `patch_transaction_id`, a resumed run never re-applies a
+patch. Permissions come from the checkpoint, so resuming cannot widen them.
+
+**Approvals.** `grant` writes an entry into `.runfix/approvals.json` with `expires_at` and
+`uses_remaining`; `consume` decrements and prunes. The MCP `tool()` wrapper checks the project
+policy (`policy.json`) when the server runs with `--require-approval` and maps each privileged
+tool to an approval action (`apply_patch → patch.apply`, `run_reproduction → reproduce.run`, …).
+A denial is raised as a `PermissionError`, which the wrapper translates into the SDK's tool
+error so the client sees the exact remediation command.
+
+**Console.** The web server stores only absolute project paths in
+`<state>/projects.json`. GET endpoints read `.runfix/tasks/*/task.json`,
+`.runfix/runs/*/report.json`, `.runfix/repro/reports/*/reproduction_report.json` and the audit
+file directly; they never call `TaskManager.status()` (which can mutate metadata) and never run
+the agent. Action endpoints keep the CLI permission rules.
 
 ## Experiment reproduction layer (0.7.0)
 

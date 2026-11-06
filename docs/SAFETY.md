@@ -1,10 +1,10 @@
 # Safety model
 
 - Scanning does not import project modules.
-- Default validation does not run a training/application entrypoint.
+- Default validation does not run a training/app entrypoint.
 - Explicit commands run without a shell and have a timeout.
 - Repo2Run requires `--confirm-external-build`.
-- Web UI binds only to loopback and has no dedicated patch-apply endpoint; a patch can only reach disk through an explicitly authorized agent run from that page.
+- Web UI binds only to loopback and has no dedicated patch-apply endpoint; a patch can only reach disk through an explicitly authorized agent run from that page. The multi-project console's GET endpoints are read-only and its registry stores paths only.
 - Patch paths must be project-relative; `.git`, binary patches, traversal and unsupported extensions are rejected.
 - Existing files are backed up before patch application.
 - LLM calls are opt-in; credentials are read from environment variables.
@@ -19,3 +19,6 @@
 - Pruning removes only transactions that can no longer be rolled back (`rolled_back`, `apply_failed`); applied transactions are kept so rollback stays possible.
 - Python patch syntax is checked in a temporary isolated tree before project files are changed. This is a syntax check, not a proof of runtime correctness.
 - If post-patch verification fails, the Agent attempts rollback only for its own recorded transaction. If the transaction has conflicts, the Agent reports that rollback was not safe.
+- Every privileged action (patch apply/rollback/recover, environment build, task start/stop, agent run, reproduction run, approval grant/revoke) is appended to `.runfix/audit/` with a SHA-256 chain; `runfix audit --verify` reports tampering. Audit failures are surfaced on stderr but never abort the operation.
+- Approvals are expiring and one-shot. The MCP server enforces a project approval policy with `--require-approval`; an approval can only narrow what the permission flags already allow, never widen them.
+- Agent runs are checkpointed per step. Resuming re-uses the permissions recorded at start, so `--resume` cannot be used to escalate a read-only run.

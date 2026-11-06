@@ -113,7 +113,12 @@
 - [ ] Reproduction success rate with published target metrics
 
 ## 1.0.0 — productisation
-- [ ] Stable CLI, MCP server and Web UI with multi-project task management
-- [ ] Long-task checkpoint recovery across restarts (beyond exit-code recovery)
-- [ ] Permission approval workflow and full operation audit trail
-- [ ] Complete documentation, packaging and installation/upgrade verification on a clean machine
+- [x] Tamper-evident audit trail with chain verification (`runfix audit --verify`)
+- [x] Durable agent checkpoints and `--resume` that never replays completed steps
+- [x] Explicit, expiring, one-shot approvals, enforced by the MCP server with `--require-approval`
+- [x] Multi-project web console with a project registry, task/audit/report views
+- [x] Stable CLI (13 subcommands), MCP server (23 tools) and package build/install verified
+- [x] Complete documentation set (audit, diagnosis, reproduction, benchmark, safety, MCP)
+- [ ] Browser-level UI tests and accessibility review
+- [ ] Real Docker/WSL execution verification
+- [ ] Curated real-repository benchmark and comparison against related systems

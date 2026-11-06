@@ -73,6 +73,18 @@ def _translate_tool_failure(exc: BaseException, tool_error_type: type | None) ->
     return exc
 
 
+# Which approval action each privileged MCP tool consumes when --require-approval is on.
+TOOL_APPROVAL_ACTIONS = {
+    "apply_patch": "patch.apply",
+    "rollback_patch": "patch.rollback",
+    "create_isolated_environment": "environment.build",
+    "start_task": "task.start",
+    "stop_task": "task.stop",
+    "run_agent": "agent.run",
+    "run_reproduction": "reproduce.run",
+}
+
+
 @dataclass
 class MCPPolicy:
     """Server-side capability gates. Tool arguments cannot override these gates."""
@@ -80,6 +92,7 @@ class MCPPolicy:
     enable_execution: bool = False
     enable_write: bool = False
     enable_install: bool = False
+    require_approval: bool = False
 
     def __post_init__(self):
         resolved = []
@@ -222,6 +235,17 @@ def create_server(policy: MCPPolicy):
             @wraps(fn)
             def guarded(*args, **kwargs):
                 try:
+                    if policy.require_approval and fn.__name__ in TOOL_APPROVAL_ACTIONS:
+                        project_value = kwargs.get("project_path")
+                        if project_value is None and args:
+                            project_value = args[0]
+                        if project_value is not None:
+                            from ..approvals import consume
+                            decision = consume(policy.project(str(project_value)),
+                                               TOOL_APPROVAL_ACTIONS[fn.__name__],
+                                               actor="mcp")
+                            if not decision["allowed"]:
+                                raise PermissionError(decision["reason"])
                     return fn(*args, **kwargs)
                 except Exception as exc:
                     raise _translate_tool_failure(exc, tool_error_type) from exc
@@ -511,7 +535,8 @@ def create_server(policy: MCPPolicy):
 
 def serve(allowed_roots: list[str] | None = None,
           enable_execution: bool = False, enable_write: bool = False,
-          enable_install: bool = False, transport: str = "stdio"):
+          enable_install: bool = False, transport: str = "stdio",
+          require_approval: bool = False):
     if transport != "stdio":
         from .. import __version__
         raise ValueError(f"RunFix {__version__} currently supports stdio transport only.")
@@ -522,6 +547,7 @@ def serve(allowed_roots: list[str] | None = None,
         enable_execution=enable_execution,
         enable_write=enable_write,
         enable_install=enable_install,
+        require_approval=require_approval,
     )
     server = create_server(policy)
     # MCP stdio reserves stdout for protocol frames; logs must go to stderr.
@@ -539,10 +565,13 @@ def main(argv: list[str] | None = None):
                         help="Allow patch application when a tool call also confirms it.")
     parser.add_argument("--enable-install", action="store_true",
                         help="Allow project-local requirements installation through run_agent.")
+    parser.add_argument("--require-approval", action="store_true",
+                        help="Privileged tools also consume a per-project approval grant "
+                             "(runfix approvals <project> --grant <action>).")
     parser.add_argument("--transport", choices=["stdio"], default="stdio")
     args = parser.parse_args(argv)
     serve(args.allowed_root or None, args.enable_execution, args.enable_write,
-          args.enable_install, args.transport)
+          args.enable_install, args.transport, args.require_approval)
 
 
 if __name__ == "__main__":

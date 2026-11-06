@@ -1,10 +1,11 @@
 from __future__ import annotations
-import json
+import json, uuid
 from pathlib import Path
 from typing import Any
 from .brain import heuristic_next, llm_next
 from .tools import ToolBox
 from ..common import save_report, redact, resolve_python
+from ..checkpoint import save_checkpoint
 
 def _brief(value: Any, limit: int=5000):
     try: text=json.dumps(value,ensure_ascii=False,default=str)
@@ -14,26 +15,66 @@ def _brief(value: Any, limit: int=5000):
 def run_agent(project_path: str|Path, goal: str="Diagnose and repair this research project so it can run.",
               python_executable: str|None=None, max_steps: int=12, allow_project_code: bool=False,
               allow_write: bool=False, use_llm: bool=False, command: list[str]|None=None,
-              timeout: int=300, allow_install: bool=False, install_timeout: int=1800) -> dict[str, Any]:
+              timeout: int=300, allow_install: bool=False, install_timeout: int=1800,
+              resume_run_id: str|None=None) -> dict[str, Any]:
     root=Path(project_path).expanduser().resolve()
     if not root.is_dir(): raise NotADirectoryError(str(root))
-    if allow_write and not allow_project_code:
-        raise ValueError("--allow-write requires --allow-project-code so the agent can verify changes.")
-    if allow_install and not allow_project_code:
-        raise ValueError("--allow-install requires --allow-project-code so the agent can diagnose and re-test after installation.")
     max_steps=max(3,min(int(max_steps),20))
-    python=resolve_python(python_executable)
-    options={"allow_project_code":allow_project_code,"allow_write":allow_write,
-             "use_llm":use_llm,"command":command,"timeout":max(30,min(int(timeout),1800)),
-             "allow_install":allow_install,"install_timeout":max(60,min(int(install_timeout),3600))}
-    box=ToolBox(root,python,options)
-    state={"goal":goal,"project_path":str(root),"python_executable":python,
-           "observations":{},"tool_counts":{},"tool_history":[],"last_error":""}
-    events=[]
-    stop_reason="max_steps_reached"
-    planner_mode="llm_with_heuristic_fallback" if use_llm else "heuristic_tool_agent"
 
-    for step in range(1,max_steps+1):
+    if resume_run_id:
+        # A resumed run re-uses the permissions the operator granted when it started; the
+        # caller's flags are intentionally ignored so a resume cannot silently escalate.
+        from ..checkpoint import load_checkpoint
+        checkpoint=load_checkpoint(root,resume_run_id)
+        if not checkpoint:
+            raise FileNotFoundError(f"No checkpoint found for run {resume_run_id}.")
+        options=dict(checkpoint.get("options") or {})
+        allow_project_code=bool(options.get("allow_project_code"))
+        allow_write=bool(options.get("allow_write"))
+        allow_install=bool(options.get("allow_install"))
+        use_llm=bool(options.get("use_llm"))
+        goal=str(checkpoint.get("goal") or goal)
+        python=resolve_python(options.get("python") or checkpoint.get("python_executable") or python_executable)
+        options["python"]=python
+        box=ToolBox.from_state(root,python,options,checkpoint.get("box") or {})
+        state=checkpoint.get("state") or {"goal":goal,"project_path":str(root),
+              "python_executable":python,"observations":{},"tool_counts":{},
+              "tool_history":[],"last_error":""}
+        events=list(checkpoint.get("events") or [])
+        start_step=int(checkpoint.get("step") or 0)+1
+        run_key=str(checkpoint.get("run_key") or resume_run_id)
+        planner_mode=str(checkpoint.get("planner_mode") or
+                         ("llm_with_heuristic_fallback" if use_llm else "heuristic_tool_agent"))
+    else:
+        if allow_write and not allow_project_code:
+            raise ValueError("--allow-write requires --allow-project-code so the agent can verify changes.")
+        if allow_install and not allow_project_code:
+            raise ValueError("--allow-install requires --allow-project-code so the agent can diagnose and re-test after installation.")
+        python=resolve_python(python_executable)
+        options={"allow_project_code":allow_project_code,"allow_write":allow_write,
+                 "use_llm":use_llm,"command":command,"timeout":max(30,min(int(timeout),1800)),
+                 "allow_install":allow_install,"install_timeout":max(60,min(int(install_timeout),3600)),
+                 "python":python}
+        box=ToolBox(root,python,options)
+        state={"goal":goal,"project_path":str(root),"python_executable":python,
+               "observations":{},"tool_counts":{},"tool_history":[],"last_error":""}
+        events=[]
+        start_step=1
+        run_key=uuid.uuid4().hex[:16]
+        planner_mode="llm_with_heuristic_fallback" if use_llm else "heuristic_tool_agent"
+
+    stop_reason="max_steps_reached"
+
+    def checkpoint(step: int, status: str, report: dict[str, Any]|None=None) -> None:
+        save_checkpoint(root, run_key, {
+            "run_key": run_key, "goal": goal, "project_path": str(root),
+            "python_executable": python, "options": {k:v for k,v in options.items() if k!="command"},
+            "command": options.get("command"), "planner_mode": planner_mode,
+            "step": step, "status": status, "events": events, "state": state,
+            "box": box.to_state(), "report": report,
+        })
+
+    for step in range(start_step,max_steps+1):
         available=box.available(state)
         decision=llm_next(state,available) if use_llm else None
         if decision is None:
@@ -98,6 +139,7 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
             if tool=="finish":
                 stop_reason=decision.get("stop_reason") or "planner_finished"
                 events.append(event)
+                checkpoint(step, "finishing")
                 break
         except Exception as exc:
             event["status"]="error"
@@ -105,6 +147,7 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
             state["tool_history"].append({"step":step,"tool":tool,"status":"error","summary":event["error"]})
             state["tool_counts"][tool]=state["tool_counts"].get(tool,0)+1
         events.append(event)
+        checkpoint(step, "running")
     else:
         stop_reason="max_steps_reached"
 
@@ -151,5 +194,15 @@ def run_agent(project_path: str|Path, goal: str="Diagnose and repair this resear
     log="\n\n".join(f"[step {e['step']}] {e['tool']} ({e['status']})\n{e.get('result_summary',e.get('error',''))}" for e in events)
     out=save_report(root,report,log)
     report["report_dir"]=str(out)
+    report["checkpoint_id"]=run_key
     (out/"agent_state.json").write_text(json.dumps({"state":state,"events":events},ensure_ascii=False,indent=2,default=str),encoding="utf-8")
+    from ..audit import audit as _audit
+    _audit(root, "agent.run", target=str(out.name), outcome=outcome, actor="runfix.agent",
+           details={"stop_reason": stop_reason, "steps": len(events),
+                    "repair_rounds_used": box.repair_attempts,
+                    "checkpoint_id": run_key,
+                    "resumed_from_step": start_step-1,
+                    "permissions": report["permissions"]})
+    last_step=events[-1]["step"] if events else max(0,start_step-1)
+    checkpoint(last_step, "finished", {k: report.get(k) for k in ("outcome","stop_reason","report_dir")})
     return report

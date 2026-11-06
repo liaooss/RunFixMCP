@@ -384,6 +384,12 @@ class TaskManager:
         _atomic_json(metadata_path, metadata)
         with _LOCK:
             _PROCESSES[task_id] = process
+        from .audit import audit as _audit
+        _audit(project, "task.start", target=task_id, outcome="started",
+               actor="runfix.tasks",
+               details={"command": " ".join(args)[:400], "label": metadata.get("label"),
+                        "pid": metadata.get("pid"),
+                        "fingerprint": metadata.get("experiment_fingerprint")})
         return self._public(metadata)
 
     @staticmethod
@@ -564,6 +570,10 @@ class TaskManager:
         else:
             metadata["status"] = "stop_requested"
         _atomic_json(task_dir / "task.json", metadata)
+        from .audit import audit as _audit
+        _audit(Path(project_path), "task.stop", target=task_id,
+               outcome=str(metadata.get("status")), actor="runfix.tasks",
+               details={"reason": reason, "returncode": metadata.get("returncode")})
         return {"stopped": bool(terminated), "task": self._public(metadata)}
 
     def read_log(

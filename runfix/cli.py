@@ -41,7 +41,26 @@ def parser():
     x.add_argument("--allow-write",action="store_true"); x.add_argument("--use-llm",action="store_true")
     x.add_argument("--allow-install",action="store_true",help="Allow requirements.txt installation into a project-local venv")
     x.add_argument("--command",nargs=argparse.REMAINDER)
+    x.add_argument("--resume",metavar="RUN_KEY",default=None,help="Resume from the checkpoint written by a previous run")
+    x=sub.add_parser("runs",help="List or inspect durable agent checkpoints")
+    x.add_argument("project"); x.add_argument("--limit",type=int,default=20)
+    x.add_argument("--show",metavar="RUN_KEY",default=None)
+    x=sub.add_parser("audit",help="Read or verify the tamper-evident audit trail")
+    x.add_argument("project"); x.add_argument("--limit",type=int,default=50)
+    x.add_argument("--filter-action",dest="filter_action",default=None)
+    x.add_argument("--verify",action="store_true")
+    x=sub.add_parser("approvals",help="Manage explicit approvals for privileged actions")
+    x.add_argument("project")
+    x.add_argument("--grant",metavar="ACTION",default=None)
+    x.add_argument("--revoke",metavar="ACTION",default=None)
+    x.add_argument("--uses",type=int,default=1)
+    x.add_argument("--ttl-minutes",type=int,default=60)
+    x.add_argument("--note",default="")
+    x.add_argument("--require",action="append",default=None,metavar="ACTION",
+                   help="Add an action that requires a prior approval in this project")
+    x.add_argument("--no-approvals",action="store_true",help="Clear the project's approval policy")
     x=sub.add_parser("web"); x.add_argument("--host",default="127.0.0.1"); x.add_argument("--port",type=int,default=8765)
+    x.add_argument("--state",default=None,help="Directory for the multi-project registry (default ./.runfix-web)")
     x=sub.add_parser("reproduce",help="Understand a research project, plan its environment, run it when authorized, and report reproducibility")
     x.add_argument("project"); x.add_argument("--python",dest="py")
     x.add_argument("--command",nargs=argparse.REMAINDER)
@@ -73,6 +92,7 @@ def parser():
     x.add_argument("--enable-execution",action="store_true",help="Allow project test/command execution after per-call confirmation.")
     x.add_argument("--enable-write",action="store_true",help="Allow patch application after per-call confirmation.")
     x.add_argument("--enable-install",action="store_true",help="Allow project-local dependency installation after per-call confirmation.")
+    x.add_argument("--require-approval",action="store_true",help="Privileged tools also require a per-project approval grant.")
     x.add_argument("--transport",choices=["stdio"],default="stdio")
     return p
 
@@ -123,9 +143,44 @@ def main(argv=None):
             root=project_dir(a.project); cmd=a.command or None
             if cmd and cmd[0]=="--": cmd=cmd[1:]
             result=run_agent(root,a.goal,a.py,a.max_steps,a.allow_project_code,a.allow_write,a.use_llm,
-                             cmd,a.timeout,a.allow_install)
+                             cmd,a.timeout,a.allow_install,resume_run_id=a.resume)
             print(json.dumps(result,ensure_ascii=False,indent=2,default=str))
             return 1 if result["outcome"] in {"diagnosed","patched_not_verified"} else 0
+        if a.action=="runs":
+            from .checkpoint import list_checkpoints, load_checkpoint
+            root=project_dir(a.project)
+            if a.show:
+                result=load_checkpoint(root,a.show)
+                if result is None:
+                    print(f"RunFix error: no checkpoint for run {a.show}",file=sys.stderr); return 1
+                print(json.dumps(result,ensure_ascii=False,indent=2,default=str)); return 0
+            print(json.dumps({"project_path":str(root),
+                              "checkpoints":list_checkpoints(root,a.limit)},
+                             ensure_ascii=False,indent=2,default=str)); return 0
+        if a.action=="audit":
+            from .audit import read_audit, verify_chain
+            root=project_dir(a.project)
+            if a.verify:
+                result=verify_chain(root)
+                print(json.dumps(result,ensure_ascii=False,indent=2)); return 0 if result.get("ok") else 1
+            entries=read_audit(root,a.limit,a.filter_action)
+            print(json.dumps({"project_path":str(root),"count":len(entries),"entries":entries},
+                             ensure_ascii=False,indent=2,default=str)); return 0
+        if a.action=="approvals":
+            from .approvals import grant, list_grants, revoke, save_policy
+            root=project_dir(a.project)
+            if a.no_approvals:
+                print(json.dumps(save_policy(root,[]),ensure_ascii=False,indent=2)); return 0
+            if a.require:
+                current=list_grants(root)["policy"]["require_approval"]
+                print(json.dumps(save_policy(root,sorted(set(current)|set(a.require))),
+                                 ensure_ascii=False,indent=2)); return 0
+            if a.grant:
+                print(json.dumps(grant(root,a.grant,a.uses,a.ttl_minutes,a.note),
+                                 ensure_ascii=False,indent=2,default=str)); return 0
+            if a.revoke:
+                print(json.dumps(revoke(root,a.revoke),ensure_ascii=False,indent=2)); return 0
+            print(json.dumps(list_grants(root),ensure_ascii=False,indent=2,default=str)); return 0
         if a.action=="reproduce":
             from .repro import reproduce
             root=project_dir(a.project); cmd=a.command or None
@@ -185,10 +240,11 @@ def main(argv=None):
             return 1 if error_count else 0
         if a.action=="web":
             from .web.server import serve
-            serve(a.host,a.port); return 0
+            serve(a.host,a.port,a.state); return 0
         if a.action=="mcp":
             from .mcp.server import serve
-            serve(a.allowed_root or None,a.enable_execution,a.enable_write,a.enable_install,a.transport)
+            serve(a.allowed_root or None,a.enable_execution,a.enable_write,a.enable_install,
+                  a.transport,a.require_approval)
             return 0
     except Exception as e:
         print(f"RunFix error: {type(e).__name__}: {e}",file=sys.stderr); return 2

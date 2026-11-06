@@ -50,6 +50,46 @@ class ToolBox:
         self.patch_rolled_back=False
         self.repair_attempts=0
 
+    def to_state(self) -> dict[str, Any]:
+        """Serialise the toolbox so a crashed run can resume without replaying side effects."""
+        return {
+            "latest_log": self.latest_log,
+            "patch_text": self.patch_text,
+            "patch_check": self.patch_check,
+            "patch_applied": self.patch_applied,
+            "repair_round": self.repair_round,
+            "apply_attempted_round": self.apply_attempted_round,
+            "verified_round": self.verified_round,
+            "environment_created": self.environment_created,
+            "environment_setup_attempted": self.environment_setup_attempted,
+            "patch_transaction_id": self.patch_transaction_id,
+            "patch_rolled_back": self.patch_rolled_back,
+            "repair_attempts": self.repair_attempts,
+            "python": self.python,
+        }
+
+    @classmethod
+    def from_state(cls, root: Path, python: str, options: dict[str, Any],
+                   data: dict[str, Any]) -> "ToolBox":
+        """Rebuild a toolbox from a checkpoint, falling back to the supplied interpreter."""
+        recorded_python = str(data.get("python") or python)
+        try:
+            box = cls(root, recorded_python, options)
+        except (FileNotFoundError, OSError):
+            box = cls(root, python, options)
+        for key, default in (
+            ("latest_log", ""), ("patch_text", ""), ("patch_check", None),
+            ("patch_applied", False), ("repair_round", 0), ("apply_attempted_round", -1),
+            ("verified_round", -1), ("environment_created", False),
+            ("environment_setup_attempted", False), ("patch_transaction_id", None),
+            ("patch_rolled_back", False), ("repair_attempts", 0),
+        ):
+            value = data.get(key, default)
+            if key in {"patch_check"} and value is not None and not isinstance(value, dict):
+                value = None
+            setattr(box, key, value)
+        return box
+
     def available(self, state: dict[str, Any]) -> list[str]:
         obs=state.get("observations",{})
         tools=[]

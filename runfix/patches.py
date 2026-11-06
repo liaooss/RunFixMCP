@@ -16,6 +16,14 @@ from pathlib import Path, PurePosixPath
 from typing import Any
 
 from .common import redact
+from .audit import audit as _audit_record
+
+
+def _audit(root: Path, action: str, target: str = "", outcome: str = "ok",
+           details: dict[str, Any] | None = None) -> None:
+    """Record a privileged patch action; audit failures are reported, never fatal."""
+    _audit_record(root, action, target=target, outcome=outcome, actor="runfix.patches",
+                  details=details)
 
 try:  # POSIX
     import fcntl
@@ -444,7 +452,15 @@ def recover_interrupted_transactions(project_path: str | Path) -> dict[str, Any]
     if not root.is_dir():
         raise NotADirectoryError(str(root))
     with _transaction_lock(root):
-        return _recover_interrupted_locked(root)
+        result = _recover_interrupted_locked(root)
+    if result["recovered"] or result["needs_review"]:
+        _audit(root, "patch.recover",
+               target=", ".join(item["transaction_id"] for item in result["recovered"]) or "none",
+               outcome="recovered" if result["recovered"] and not result["needs_review"] else "review",
+               details={"recovered": len(result["recovered"]),
+                        "needs_review": len(result["needs_review"]),
+                        "pruned": len(result.get("pruned") or [])})
+    return result
 
 
 def _read_transaction(root: Path, transaction_id: str) -> tuple[Path, dict[str, Any]]:
@@ -495,7 +511,13 @@ def apply_patch(
         result = _apply_patch_transaction(root, check, text)
         if recovery["recovered"] or recovery["needs_review"]:
             result["recovery"] = recovery
-        return result
+    _audit(root, "patch.apply",
+           target=", ".join(result.get("files") or check.get("paths") or []),
+           outcome="applied" if result.get("applied") else "rejected",
+           details={"transaction_id": result.get("transaction_id"),
+                    "reason": result.get("reason") or (result.get("validation") or {}).get("reason"),
+                    "paths": result.get("files"), "recovery": bool(result.get("recovery"))})
+    return result
 
 
 def _apply_patch_transaction(root: Path, check: dict[str, Any], text: str) -> dict[str, Any]:
@@ -641,7 +663,11 @@ def rollback_patch(
         result = _rollback_patch_locked(root, transaction_id)
         if recovery["recovered"] or recovery["needs_review"]:
             result["recovery"] = recovery
-        return result
+    _audit(root, "patch.rollback", target=str(transaction_id),
+           outcome="rolled_back" if result.get("rolled_back") else "refused",
+           details={"reason": result.get("reason"),
+                    "conflicts": len(result.get("conflicts") or [])})
+    return result
 
 
 def _rollback_patch_locked(root: Path, transaction_id: str) -> dict[str, Any]:

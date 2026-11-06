@@ -546,3 +546,61 @@ python -m runfix.mcp.smoke --full  → 23/23 tools exercised, exit 0（本版本
 - 真实科研仓库上的根因准确率：`synthetic-v1` 的任务由本项目自行构造，**不能**外推为真实世界精度。
 - 与 Repo2Run / Env-Doctor / ResearchEnvBench 的对比实验：需要统一语料与硬件条件，尚未开展。
 - Docker/WSL 实际执行仍未验证（本机无 Docker 守护进程、无 WSL 发行版）。
+
+---
+
+## 14. 1.0.0 增量（回填）
+
+### 14.1 新增能力
+
+| 能力 | 实现 | 验证 |
+| --- | --- | --- |
+| 防篡改操作审计（SHA-256 哈希链、按月轮转、脱敏、4KB 截断） | `runfix/audit.py` | `tests/test_product.py`（篡改/删除/重排三种破坏均被检出） |
+| 审计接入全部特权操作 | `patches` / `environments` / `task_manager` / `agent.core` / `repro.pipeline` / `approvals` | 真实执行后 `audit --verify` → `{"ok": true, "checked": 3}` |
+| Agent 断点检查点与恢复 | `runfix/checkpoint.py` + `agent/core.py` + `ToolBox.to_state/from_state` | `test_agent_resumes_from_a_checkpoint_without_replaying_steps`（断言 `scan_project` 只出现一次） |
+| 恢复不可提权 | checkpoint 内保存当时的 options | `test_resume_cannot_escalate_permissions` |
+| 显式审批（一次性、带有效期） | `runfix/approvals.py` | 授予/消费/过期/撤销 + 审计记录 |
+| MCP 审批门禁 | `mcp/server.py` `TOOL_APPROVAL_ACTIONS` + `--require-approval` | `test_mcp_requires_an_approval_when_enabled` |
+| 多项目 Web 控制台 | `runfix/web/server.py`（项目注册表 + 只读 tasks/audit/reports） | 真实 HTTP 调用（见 §14.2） |
+| CLI 新增 `audit` / `approvals` / `runs`，`agent --resume`，`web --state`，`mcp --require-approval` | `runfix/cli.py` | 手动真实运行 |
+
+### 14.2 真实端到端证据
+
+在同一演示项目上依次执行 `reproduce`、`agent`、`approvals --grant` 后：
+
+```
+runfix audit <project> --verify
+{"ok": true, "checked": 3, "files": ["audit-2026-11.jsonl"], "last_hash": "7826cde1..."}
+
+entries:
+  10:58:57 reproduce.run      reproduced        python train.py --config configs/base.yaml
+  10:58:57 agent.run          inspection_only   20261106-105857-3db1e9
+  10:58:58 approval.grant     granted           patch.apply
+```
+
+多项目控制台（真实 HTTP，非直接调用处理函数）：
+
+```
+GET /api/health        → version=1.0.0, state_dir=...
+POST /api/projects     → count=1
+GET /api/projects      → demo_paper: tasks=0, audit=3, reproduction=reproduced
+GET /api/audit?project → 3 条，最后一条 approval.grant
+GET /                 → 6208 字节，含 "RunFix Console"
+POST /api/projects（不存在的目录） → 400
+bind 0.0.0.0          → 拒绝
+```
+
+### 14.3 1.0.0 测试基线
+
+```
+python -m pytest -q                → 249 passed, 2 skipped
+python -m runfix.mcp.smoke --full  → 23/23 tools, exit 0
+```
+
+### 14.4 项目现状结论
+
+- 交接任务书中的五个阶段（0.1–0.6 既有基线、0.6.1 稳定性、0.7.0 复现、0.8.0 深度诊断、
+  0.9.0 评测、1.0.0 产品化）均已在代码、测试和文档中落地并逐项验证。
+- **仍然不能宣称**：真实科研仓库上的精度、Docker/WSL 容器内执行、LLM 生成补丁、浏览器级
+  UI 验证。四项都明确写在 `docs/ROADMAP.md` 的未完成列表与 CHANGELOG 的 “Still not verified”。
+- 下一步（0.10/1.1 方向）：真实语料评测、真实容器验证、LLM 规划器实测。

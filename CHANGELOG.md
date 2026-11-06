@@ -1,5 +1,61 @@
 # Changelog
 
+## 1.0.0 — product surface: audit trail, checkpoint resume, approvals, multi-project console
+
+Everything below was exercised on this machine; the verification table at the end of this
+entry lists what was actually run.
+
+### Added
+
+- **Tamper-evident audit trail** (`runfix/audit.py`): every privileged action
+  (`patch.apply/rollback/recover`, `environment.build`, `task.start/stop`, `agent.run`,
+  `reproduce.run`, approval grants/revocations) is appended to
+  `<project>/.runfix/audit/audit-YYYY-MM.jsonl` with a SHA-256 hash chain and redacted
+  details. `runfix audit <project> --verify` recomputes the chain and exits non-zero on any
+  modification, removal or reordering.
+- **Durable agent checkpoints and resume** (`runfix/checkpoint.py`): a checkpoint is written
+  after every completed step; `runfix agent <project> --resume <run_key>` continues from the
+  next step instead of replaying side effects. `runfix runs <project>` lists them.
+  Resuming re-uses the permissions the run was started with, so a resume can never escalate.
+- **Explicit approvals** (`runfix/approvals.py`): `runfix approvals <project> --grant
+  patch.apply --uses 2 --ttl-minutes 30` issues an expiring, one-shot grant;
+  `--require patch.apply` records the project policy; `--revoke` withdraws it. The MCP server
+  honours the policy when started with `--require-approval`, consuming a grant before
+  `apply_patch`, `rollback_patch`, `start_task`, `stop_task`, `create_isolated_environment`,
+  `run_agent` or `run_reproduction` runs. Approvals only *narrow* what the permission flags
+  already allow.
+- **Multi-project web console** (`runfix/web/server.py`): a project registry plus
+  `/api/projects`, `/api/tasks`, `/api/audit`, `/api/reports` and a dashboard that shows each
+  project's tasks, latest report, reproduction verdict and audit count. GET endpoints are
+  strictly read-only; the existing action endpoints keep their permission rules.
+- `docs/AUDIT_LOG.md`, `docs/WEB_UI.md`.
+
+### Changed
+
+- `runfix web` gained `--state` (registry directory, default `./.runfix-web`).
+- `runfix agent` gained `--resume`, and every agent report now carries `checkpoint_id`.
+- `runfix mcp` gained `--require-approval`.
+- The MCP tool wrapper consumes approvals before invoking a privileged tool and reports the
+  denial as a tool error with the exact command needed to grant it.
+
+### Verified on this machine
+
+| Check | Result |
+| --- | --- |
+| `python -m pytest -q` | **249 passed, 2 skipped** |
+| `python -m runfix.mcp.smoke --full` | **23/23 tools**, exit 0 |
+| Real audited actions (`reproduce`, `agent`, `approvals --grant`) | 3 entries written |
+| `runfix audit --verify` | `{"ok": true, "checked": 3}` |
+| Web console over real HTTP | health/projects/tasks/audit/dashboard all returned; 0.0.0.0 rejected |
+
+### Still not verified
+
+- Docker/WSL execution (no Docker daemon, no WSL distribution on this host).
+- LLM planning and LLM-authored patches (no API key).
+- Accuracy on real published repositories (the benchmark suite is self-authored).
+- The web console in a real browser: only HTTP-level checks were performed, not visual ones.
+
+
 ## 0.9.0 — reproducible benchmark and ablation study
 
 RunFix can now measure its own diagnosis instead of asserting it works.

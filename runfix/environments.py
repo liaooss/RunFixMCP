@@ -106,6 +106,37 @@ def build_isolated_environment(
     runner: Callable[..., dict[str, Any]] = run,
     conda_executable: str | None = None,
 ) -> dict[str, Any]:
+    """Build (or reuse) a project-local environment and record the action in the audit trail."""
+    root = Path(project_path).expanduser().resolve()
+    result = _build_isolated_environment(
+        root, python_executable=python_executable, timeout=timeout,
+        runner=runner, conda_executable=conda_executable,
+    )
+    from .audit import audit as _audit
+    _audit(
+        root, "environment.build",
+        target=str(result.get("environment") or result.get("manifest") or ""),
+        outcome=("reused" if result.get("reused") else
+                 "created" if result.get("created") else "failed"),
+        actor="runfix.environments",
+        details={
+            "manager": result.get("manager"),
+            "manifest": result.get("manifest"),
+            "fingerprint": result.get("fingerprint"),
+            "python_executable": result.get("python_executable"),
+            "reason": result.get("reason"),
+        },
+    )
+    return result
+
+
+def _build_isolated_environment(
+    project_path: str | Path,
+    python_executable: str | None = None,
+    timeout: int = 1800,
+    runner: Callable[..., dict[str, Any]] = run,
+    conda_executable: str | None = None,
+) -> dict[str, Any]:
     """Build an isolated environment from environment.yml, requirements.txt or pyproject.toml.
 
     This function never installs into the selected/base interpreter. Every target is
