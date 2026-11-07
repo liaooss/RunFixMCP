@@ -1,5 +1,34 @@
 # Changelog
 
+## Unreleased — repository and documentation
+
+Prepared the project for publication as an open-source repository. No runtime behaviour
+changed; the test suite, MCP checks and benchmark results are identical to 1.0.0.
+
+### Added
+
+- `README.zh-CN.md` — full Chinese front page.
+- `docs/PROJECT_BRIEF.zh-CN.md` — a standalone project brief: background, positioning,
+  architecture, design decisions, version history, verification results and honest limits.
+- `docs/INDEX.md` — a map of all documentation, including recommended reading order.
+- `CONTRIBUTING.md`, `SECURITY.md`, `CODE_OF_CONDUCT.md`, `CITATION.cff`.
+- `.github/ISSUE_TEMPLATE/{bug_report,feature_request}.yml`, `.github/PULL_REQUEST_TEMPLATE.md`.
+- `.github/workflows/ci.yml` — tests on Ubuntu/Windows × Python 3.10/3.11/3.12, a full 23-tool
+  MCP job, and a wheel build + clean-venv install job. **Authored here but not yet executed on
+  GitHub**; the workflow file says so.
+- Package metadata: `keywords`, classifiers and `project.urls` in `pyproject.toml`.
+
+### Changed
+
+- `README.md` rewritten as a project front page: what and why, capability table, real recorded
+  outputs, install, architecture diagram, verification table, explicit non-claims, docs map.
+
+### Verified / not verified for this change
+
+- Verified locally: `pytest -q` → 249 passed, 2 skipped (documentation-only change).
+- Not verified: the CI workflow itself, and rendering of the new Markdown on GitHub.
+
+
 ## 1.0.0 — product surface: audit trail, checkpoint resume, approvals, multi-project console
 
 Everything below was exercised on this machine; the verification table at the end of this

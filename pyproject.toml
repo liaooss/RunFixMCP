@@ -5,12 +5,41 @@ build-backend = "setuptools.build_meta"
 [project]
 name = "runfix-agent"
 version = "1.0.0"
-description = "Autonomous agent for evidence-driven diagnosis and safe repair of research code"
+description = "Autonomous agent for evidence-driven diagnosis, safe repair and experiment reproduction of research code"
 readme = "README.md"
 requires-python = ">=3.10"
 license = "MIT"
 license-files = ["LICENSE"]
 dependencies = []
+keywords = [
+    "reproducibility",
+    "research-software",
+    "environment-diagnosis",
+    "root-cause-analysis",
+    "autonomous-agent",
+    "mcp",
+]
+classifiers = [
+    "Development Status :: 5 - Production/Stable",
+    "Environment :: Console",
+    "Intended Audience :: Science/Research",
+    "License :: OSI Approved :: MIT License",
+    "Operating System :: Microsoft :: Windows",
+    "Operating System :: POSIX :: Linux",
+    "Programming Language :: Python :: 3",
+    "Programming Language :: Python :: 3.10",
+    "Programming Language :: Python :: 3.11",
+    "Programming Language :: Python :: 3.12",
+    "Topic :: Scientific/Engineering",
+    "Topic :: Software Development :: Quality Assurance",
+]
+
+[project.urls]
+Homepage = "https://github.com/liaooss/RunFixMCP"
+Repository = "https://github.com/liaooss/RunFixMCP"
+Documentation = "https://github.com/liaooss/RunFixMCP/blob/main/docs/INDEX.md"
+Changelog = "https://github.com/liaooss/RunFixMCP/blob/main/CHANGELOG.md"
+Issues = "https://github.com/liaooss/RunFixMCP/issues"
 
 [project.optional-dependencies]
 envdoctor = ["env-doctor>=0.3.5"]

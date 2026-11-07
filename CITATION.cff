@@ -1,0 +1,29 @@
+cff-version: 1.2.0
+message: "If you use RunFix in academic work, please cite it using this metadata."
+title: "RunFix: autonomous diagnosis, safe repair and experiment reproduction for research code"
+abstract: >-
+  RunFix is an agent for research repositories. It reads a project's README, manifests,
+  configuration and entrypoints, diagnoses its environment, builds an evidence graph from a
+  failure, ranks root causes with cited evidence, applies patches as reversible transactions,
+  and runs the documented experiment behind an evidence ladder that refuses to treat a zero
+  exit code as a reproduction. It exposes the same capabilities through a CLI, an MCP server
+  and a local web console, with hash-chained auditing of every privileged action.
+type: software
+authors:
+  - name: "RunFix contributors"
+repository-code: "https://github.com/liaooss/RunFixMCP"
+url: "https://github.com/liaooss/RunFixMCP"
+license: MIT
+version: 1.0.0
+date-released: "2026-11-06"
+keywords:
+  - reproducibility
+  - research software
+  - environment diagnosis
+  - root cause analysis
+  - autonomous agents
+  - model context protocol
+identifiers:
+  - type: url
+    value: "https://github.com/liaooss/RunFixMCP"
+    description: "Source repository"

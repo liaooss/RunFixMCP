@@ -1,0 +1,50 @@
+name: Feature request
+description: Propose a capability, a diagnostic rule, a benchmark task or a documentation gap
+title: "[feature] "
+labels: ["enhancement"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        RunFix prefers evidence-shaped proposals: what fails today, what evidence would prove it
+        was fixed, and how it could be verified without hardware or credentials we do not have.
+  - type: textarea
+    id: problem
+    attributes:
+      label: What problem does this solve?
+      description: Describe the concrete research-code situation, not an abstract capability.
+    validations:
+      required: true
+  - type: textarea
+    id: proposal
+    attributes:
+      label: Proposed behaviour
+    validations:
+      required: true
+  - type: dropdown
+    id: area
+    attributes:
+      label: Area
+      options:
+        - diagnosis (evidence graph, dependency analysis, root causes)
+        - reproduction (plan, run, metrics, verdict)
+        - agent (policy, tools, loop)
+        - MCP / CLI / web surface
+        - safety (permissions, audit, approvals, sandbox)
+        - benchmark and evaluation
+        - documentation
+    validations:
+      required: true
+  - type: textarea
+    id: verification
+    attributes:
+      label: How could this be verified?
+      description: A test, a benchmark task, a recorded command — what would convince a reviewer?
+    validations:
+      required: true
+  - type: textarea
+    id: alternatives
+    attributes:
+      label: Alternatives considered
+    validations:
+      required: false

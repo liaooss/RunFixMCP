@@ -1,0 +1,78 @@
+name: Bug report
+description: Something behaved differently from what the documentation says
+title: "[bug] "
+labels: ["bug"]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. RunFix is built on "no claim without evidence", so a few facts
+        make the difference between a fixable issue and a guess.
+
+        Please redact API keys, tokens and private repository contents.
+  - type: input
+    id: version
+    attributes:
+      label: RunFix version
+      description: Output of `runfix --version`
+      placeholder: "RunFix 1.0.0"
+    validations:
+      required: true
+  - type: dropdown
+    id: os
+    attributes:
+      label: Operating system
+      options:
+        - Windows 11
+        - Windows 10
+        - Linux
+        - macOS
+        - other (describe below)
+    validations:
+      required: true
+  - type: input
+    id: python
+    attributes:
+      label: Python version and interpreter path
+      placeholder: "3.11.17  E:\\tool\\miniconda\\envs\\runfix\\python.exe"
+    validations:
+      required: true
+  - type: textarea
+    id: command
+    attributes:
+      label: Exact command or MCP tool call
+      render: shell
+    validations:
+      required: true
+  - type: textarea
+    id: expected
+    attributes:
+      label: What you expected to happen
+    validations:
+      required: true
+  - type: textarea
+    id: actual
+    attributes:
+      label: What actually happened
+      description: Include the output, the exit code and (if relevant) the report path under `.runfix/`.
+    validations:
+      required: true
+  - type: textarea
+    id: diagnostics
+    attributes:
+      label: Diagnostics
+      description: Output of `scripts\\diagnose_windows.ps1` (or the equivalent checks on your platform).
+      render: text
+    validations:
+      required: false
+  - type: checkboxes
+    id: checks
+    attributes:
+      label: Before submitting
+      options:
+        - label: I searched existing issues
+          required: true
+        - label: I removed secrets and private content from this report
+          required: true
+        - label: This is not a security vulnerability (those go to SECURITY.md)
+          required: true
