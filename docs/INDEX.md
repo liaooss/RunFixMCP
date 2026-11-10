@@ -8,6 +8,7 @@ the rest.
 | Document | Read it if you want to… |
 | --- | --- |
 | [PROJECT_BRIEF.zh-CN.md](PROJECT_BRIEF.zh-CN.md) | 用中文快速了解：背景、定位、架构、版本演进、验证结果、能力边界（推荐先读） |
+| [EVIDENCE_CRITERIA.md](EVIDENCE_CRITERIA.md) · [中文](EVIDENCE_CRITERIA.zh-CN.md) | see **what each of the six steps actually checks** and what the reproduction verdict is based on |
 | [ARCHITECTURE.md](ARCHITECTURE.md) | see the layers, the data flow and how the pieces connect |
 | [CURRENT_STATE_AUDIT.md](CURRENT_STATE_AUDIT.md) | read the evidence-based audit the project was rebuilt from — every defect with a file:line reference |
 | [ROADMAP.md](ROADMAP.md) | see what is done and what is explicitly still open |

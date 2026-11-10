@@ -148,6 +148,59 @@ Three properties are enforced in code, not just documented:
 3. **Every claim is auditable.** Reports cite their evidence, runs carry a fingerprint, and
    privileged actions are appended to a hash chain that `runfix audit --verify` recomputes.
 
+## How each step is decided
+
+Full detail — formulas, decision tree, known weaknesses — is in
+[docs/EVIDENCE_CRITERIA.md](docs/EVIDENCE_CRITERIA.md).
+
+**1. Understand the project** — read-only, no `import`, no execution of project code.
+README is parsed for install/run commands inside fenced blocks; entrypoints are ranked by name
+base score **+40** for a README mention, **+20** for a `__main__` guard, **+15** for argparse,
+**+10** for distributed code; configs are read with `json`/`tomllib`/PyYAML, or a flat-key scan
+when PyYAML is absent; dataset keys are matched, resolved and existence-checked. Missing pieces
+become `warnings`, never guesses.
+
+**2. Diagnose the environment** — one subprocess probe of the selected interpreter, no installs.
+Python requirement is compared as a numeric tuple (`true`/`false`/`null`); CUDA compatibility
+compares the declared wheel tag (`cu121` → 12.1) with the driver's `CUDA Version` and yields
+`supported` / `unsupported` / **`unknown`** — never a guess.
+
+**3. Locate the root cause** — an evidence graph (`exception → raised_in → source → imports →
+declares → resolved_to → tested_by`) plus 13 candidate kinds.
+`confidence = base + min(0.09, 0.03×(evidence−1)) + corroboration − 0.12×contradictions`,
+clamped to [0.05, 0.98]; ranking adds `0.01×min(5, evidence)`. If no rule fires, the answer is
+`unclassified_error` at 0.30 with a request for more evidence.
+
+**4. Controlled repair** — three gates (server flag → per-call confirmation → optional one-shot
+approval), seven patch checks (path, `.git`, extension, per-segment symlinks, binary/submodule,
+`git apply --check`, isolated `ast.parse`), and a transaction with before/after hashes.
+Rollback only if **every** target still matches `sha256_after`; a crashed `applying` transaction
+is restored, left alone, or flagged for review based on hashes. Applying a patch is not
+repairing it — step 5 decides that.
+
+**5. Run and collect evidence** — explicit argv, `shell=False`, timeout, combined log.
+Five exclusive statuses: `failed_to_start`, `timed_out`, `failed`, `completed` (exit 0 **and**
+completion evidence), `process_exited` (exit 0 **and no** evidence). Completion evidence is a
+parsed metric, one of 13 markers, or your `--completion-regex`.
+
+**6. Decide whether it reproduced** — the seven-rung ladder below. Metric targets use an
+**absolute 0.02** tolerance when |value| ≤ 1 and **relative 2%** otherwise; every target is
+`match`, `mismatch` or `missing`.
+
+| Rung | Entry condition (all required) |
+| --- | --- |
+| `inspected` | the repository was read |
+| `plan_ready` | an environment/run plan exists |
+| `executed` | the command ran (timeout and failure count) |
+| `completed` | exit code 0 **and** completion evidence |
+| `metrics_recorded` | final metrics were parsed |
+| `metrics_matched` | **every** declared target matched |
+| `reproduced` | matched **and** the tree was clean during the run **and** a git commit exists |
+
+`reproduced` means: on this machine, with this interpreter and this commit, the documented
+command ran and the parsed metrics met the declared targets. It does **not** mean the paper is
+correct, the method beats its baselines, or the result is statistically significant.
+
 ## Verification (last run on this machine)
 
 | Check | Result |
@@ -180,6 +233,7 @@ built from.
 | Document | Contents |
 | --- | --- |
 | [docs/INDEX.md](docs/INDEX.md) | Map of all documentation |
+| [docs/EVIDENCE_CRITERIA.md](docs/EVIDENCE_CRITERIA.md) | **The criteria behind every step**: rules, formulas, decision tree, known weaknesses ([中文](docs/EVIDENCE_CRITERIA.zh-CN.md)) |
 | [docs/PROJECT_BRIEF.zh-CN.md](docs/PROJECT_BRIEF.zh-CN.md) | 项目简介（中文）：背景、定位、能力、架构、验证、边界 |
 | [docs/ARCHITECTURE.md](docs/ARCHITECTURE.md) | Layers, data flow, product surface |
 | [docs/DIAGNOSIS.md](docs/DIAGNOSIS.md) | Evidence graph, dependency resolution, confidence model |

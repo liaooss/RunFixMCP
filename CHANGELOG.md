@@ -7,6 +7,13 @@ changed; the test suite, MCP checks and benchmark results are identical to 1.0.0
 
 ### Added
 
+- `docs/EVIDENCE_CRITERIA.md` / `docs/EVIDENCE_CRITERIA.zh-CN.md` — **the criteria behind every
+  step**: what each of the six stages reads, the exact rules and thresholds it applies (entrypoint
+  scoring, CUDA three-state verdict, confidence formula with a worked example, seven patch checks,
+  rollback hash rule, five-state run status, completion-evidence rules, the seven-rung verdict
+  ladder, metric tolerance), the decision tree, four real outcomes, and the known weaknesses.
+- A six-step "how each step is decided" section in `README.md` and `README.zh-CN.md`, and a
+  criteria section (§12) in `docs/PROJECT_BRIEF.zh-CN.md`.
 - `README.zh-CN.md` — full Chinese front page.
 - `docs/PROJECT_BRIEF.zh-CN.md` — a standalone project brief: background, positioning,
   architecture, design decisions, version history, verification results and honest limits.
