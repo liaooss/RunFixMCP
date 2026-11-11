@@ -12,9 +12,8 @@ changed; the test suite, MCP checks and benchmark results are identical to 1.0.0
   scoring, CUDA three-state verdict, confidence formula with a worked example, seven patch checks,
   rollback hash rule, five-state run status, completion-evidence rules, the seven-rung verdict
   ladder, metric tolerance), the decision tree, four real outcomes, and the known weaknesses.
-- A six-step "how each step is decided" section in `README.md` and `README.zh-CN.md`, and a
-  criteria section (§12) in `docs/PROJECT_BRIEF.zh-CN.md`.
-- `README.zh-CN.md` — full Chinese front page.
+- A six-step "how each step is decided" section in `README.md`, and a criteria section (§12) in
+  `docs/PROJECT_BRIEF.zh-CN.md`.
 - `docs/PROJECT_BRIEF.zh-CN.md` — a standalone project brief: background, positioning,
   architecture, design decisions, version history, verification results and honest limits.
 - `docs/INDEX.md` — a map of all documentation, including recommended reading order.
@@ -27,8 +26,10 @@ changed; the test suite, MCP checks and benchmark results are identical to 1.0.0
 
 ### Changed
 
-- `README.md` rewritten as a project front page: what and why, capability table, real recorded
-  outputs, install, architecture diagram, verification table, explicit non-claims, docs map.
+- `README.md` rewritten as the project's single front page, in Chinese: what and why, capability
+  table, the six-step criteria, real recorded outputs, install, architecture, verification table,
+  task-book completion mapping, explicit non-claims and a docs map. `README.zh-CN.md` was merged
+  into it and removed, so there is one authoritative entry document.
 
 ### Verified / not verified for this change
 

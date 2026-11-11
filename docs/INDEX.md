@@ -1,6 +1,6 @@
 # Documentation index
 
-Start with the README ([English](../README.md) · [中文](../README.zh-CN.md)). This page maps
+Start with the README ([中文](../README.md), the project's front page). This page maps
 the rest.
 
 ## For first-time readers

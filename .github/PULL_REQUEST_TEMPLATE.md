@@ -31,7 +31,7 @@ Every PR states its boundaries. Examples: "not tested on Linux", "no Docker on t
 
 ## Checklist
 
-- [ ] `README.md` and `README.zh-CN.md` updated if user-facing behaviour changed
+- [ ] `README.md` updated if user-facing behaviour changed
 - [ ] The relevant `docs/*.md` updated
 - [ ] `CHANGELOG.md` entry added under the current unreleased/next version
 - [ ] Version bumped in `pyproject.toml` and `runfix/__init__.py` (releases only)

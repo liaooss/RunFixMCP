@@ -70,7 +70,7 @@ failure.
 
 Documentation is part of the deliverable, not an afterthought. If behaviour changes:
 
-- `README.md` and `README.zh-CN.md` — user-facing description
+- `README.md` — user-facing description (Chinese, project front page)
 - `docs/` — the relevant design document
 - `CHANGELOG.md` — the "Fixed / Added / Changed" entry
 - `docs/ROADMAP.md` — tick what is done, add what remains
